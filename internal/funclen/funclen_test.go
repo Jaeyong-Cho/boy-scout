@@ -412,3 +412,26 @@ func TestCheck_ExcludeFuncByCommentDirective_NamesOtherCheckerOnly(t *testing.T)
 		t.Errorf("expected 0 excluded funcs (directive names other checker), got %d", len(report.ExcludedFuncs))
 	}
 }
+
+func TestCheck_StillScoresTestFilesUnaffectedByCrapDefault(t *testing.T) {
+	// Regression test: funclen should still score functions in _test.go files
+	// even though crap.Check now excludes them by default
+	tmpDir := t.TempDir()
+
+	// Create a _test.go file with a function exceeding the limit (55 lines > 50 default)
+	writeFile(t, tmpDir+"/helper_test.go", funcSrc("TestHelper", 53))
+
+	report, err := funclen.Check([]string{tmpDir}, 50, funclen.Options{})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// funclen should still report the violation in the test file
+	if len(report.Violations) != 1 {
+		t.Errorf("expected 1 violation for long function in _test.go, got %d", len(report.Violations))
+	}
+
+	if len(report.Violations) > 0 && report.Violations[0].Func != "TestHelper" {
+		t.Errorf("expected violation for TestHelper, got %q", report.Violations[0].Func)
+	}
+}

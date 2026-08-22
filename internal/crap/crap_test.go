@@ -224,8 +224,9 @@ func TestDummy(t *testing.T) {}
 		t.Fatalf("Check failed: %v", err)
 	}
 
-	if len(report.ExcludedFiles) != 1 {
-		t.Errorf("expected 1 excluded file when debug=true, got %d", len(report.ExcludedFiles))
+	// Should have 2 excluded files: main.go (user-provided) + main_test.go (default)
+	if len(report.ExcludedFiles) != 2 {
+		t.Errorf("expected 2 excluded files when debug=true (main.go + main_test.go default), got %d: %v", len(report.ExcludedFiles), report.ExcludedFiles)
 	}
 }
 
@@ -383,5 +384,175 @@ func TestDummy(t *testing.T) {}
 
 	if len(report.ExcludedFuncs) != 0 {
 		t.Errorf("expected 0 excluded funcs (directive names other checker), got %d", len(report.ExcludedFuncs))
+	}
+}
+
+func TestCheck_TestFilesExcludedFromCrapByDefault(t *testing.T) {
+	writeFixtureModule(t)
+
+	// Write main.go with a trivial function
+	writeFile(t, "main.go", `package main
+func Add(a, b int) int {
+	return a + b
+}
+`)
+
+	// Write main_test.go with an untested, deeply-nested helper function
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestAdd(t *testing.T) {
+	_ = Add(1, 2)
+}
+func chdirTemp() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+
+	// Call Check with low threshold, no ExcludeFiles set
+	report, err := Check([]string{"."}, 1.0, Options{})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Assert that no violation is reported for the test file helper
+	for _, v := range report.Violations {
+		if v.Func == "chdirTemp" {
+			t.Errorf("expected chdirTemp in main_test.go to be excluded by default, but found violation: %+v", v)
+		}
+	}
+}
+
+func TestCheck_DefaultTestFileExcludeVisibleInDebugOutput(t *testing.T) {
+	writeFixtureModule(t)
+
+	writeFile(t, "main.go", `package main
+func Add(a, b int) int {
+	return a + b
+}
+`)
+
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestAdd(t *testing.T) {
+	_ = Add(1, 2)
+}
+func chdirTemp() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+
+	// Call Check with Debug=true to see excluded files
+	report, err := Check([]string{"."}, 1.0, Options{Debug: true})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Assert that main_test.go appears in ExcludedFiles
+	if len(report.ExcludedFiles) == 0 {
+		t.Errorf("expected at least 1 excluded file in debug output, got 0")
+	}
+
+	found := false
+	for _, ef := range report.ExcludedFiles {
+		if ef == "main_test.go" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected main_test.go in ExcludedFiles, got: %v", report.ExcludedFiles)
+	}
+}
+
+func TestCheck_DefaultTestFileExcludeCombinesWithUserExcludeFile(t *testing.T) {
+	writeFixtureModule(t)
+
+	writeFile(t, "main.go", `package main
+func Add(a, b int) int {
+	return a + b
+}
+`)
+
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestAdd(t *testing.T) {
+	_ = Add(1, 2)
+}
+func chdirTemp() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+
+	writeFile(t, "mocks_test.go", `package main
+func mockSetup() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+
+	// Call Check with both user-provided exclude and the default
+	report, err := Check([]string{"."}, 1.0, Options{
+		ExcludeFiles: []string{"mocks_test.go"},
+		Debug:        true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Assert both files are excluded
+	if len(report.ExcludedFiles) < 2 {
+		t.Errorf("expected at least 2 excluded files (main_test.go + mocks_test.go), got %d: %v", len(report.ExcludedFiles), report.ExcludedFiles)
+	}
+
+	hasMainTest := false
+	hasMocksTest := false
+	for _, ef := range report.ExcludedFiles {
+		if ef == "main_test.go" {
+			hasMainTest = true
+		}
+		if ef == "mocks_test.go" {
+			hasMocksTest = true
+		}
+	}
+
+	if !hasMainTest {
+		t.Errorf("expected main_test.go in excluded files")
+	}
+	if !hasMocksTest {
+		t.Errorf("expected mocks_test.go in excluded files")
+	}
+
+	// Assert no violations for functions in either excluded test file
+	for _, v := range report.Violations {
+		if v.Func == "chdirTemp" || v.Func == "mockSetup" {
+			t.Errorf("unexpected violation in test file: %+v", v)
+		}
+	}
+}
+
+func TestCheck_FileNotMatchingTestSuffixStillScored(t *testing.T) {
+	writeFixtureModule(t)
+
+	// Write contest.go (contains "test" but wrong suffix) with untested function
+	writeFile(t, "contest.go", `package main
+func ComplexFunc() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestDummy(t *testing.T) {}
+`)
+
+	// Call Check with low threshold
+	report, err := Check([]string{"."}, 1.0, Options{})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Assert that ComplexFunc in contest.go IS reported as a violation
+	v := mustFindViolation(t, report.Violations, "ComplexFunc")
+	if v.File != "contest.go" {
+		t.Errorf("expected violation in contest.go, got %s", v.File)
 	}
 }

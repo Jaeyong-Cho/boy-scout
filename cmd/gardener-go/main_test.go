@@ -941,3 +941,121 @@ func ViolatingFunc() {
 		t.Errorf("expected exit code 1, got %d", exitCode)
 	}
 }
+
+func TestRun_CrapIgnoresTestFilesByDefaultOnCLI(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write main.go with a trivial function
+	writeGoFile(t, tmpDir, "main.go", `package main
+func Add(a, b int) int {
+	return a + b
+}
+`)
+
+	// Write main_test.go with an untested, deeply-nested helper function
+	writeGoFile(t, tmpDir, "main_test.go", `package main
+import "testing"
+func TestAdd(t *testing.T) {
+	_ = Add(1, 2)
+}
+func chdirTemp() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+
+	// Write go.mod
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	// Run crap with low threshold, no --exclude-file flag
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"crap", "--threshold=1", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Assert that chdirTemp from main_test.go is NOT in the output
+	if strings.Contains(output, "chdirTemp") {
+		t.Errorf("expected chdirTemp not to be reported, but found it in output:\n%s", output)
+	}
+
+	// Exit code should be 0 (no violations, since the only complex function is in excluded test file)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 (clean), got %d", exitCode)
+	}
+}
+
+func TestRun_AllCrapSectionIgnoresTestFilesByDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write main.go with a trivial function
+	writeGoFile(t, tmpDir, "main.go", `package main
+func Add(a, b int) int {
+	return a + b
+}
+`)
+
+	// Write main_test.go with an untested, deeply-nested helper function
+	writeGoFile(t, tmpDir, "main_test.go", `package main
+import "testing"
+func TestAdd(t *testing.T) {
+	_ = Add(1, 2)
+}
+func chdirTemp() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+
+	// Write go.mod
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	// Run "all" with JSON format (uses default thresholds: funclen=50, crap=6.0)
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	stderrOutput := stderrBuf.String()
+
+	// Debug: print actual output and stderr
+	if stderrOutput != "" {
+		t.Logf("stderr: %s", stderrOutput)
+	}
+
+	// Parse the combined report
+	var combined struct {
+		Crap struct {
+			Violations []struct {
+				Func string `json:"func"`
+			} `json:"violations"`
+		} `json:"crap"`
+	}
+
+	if output == "" {
+		t.Logf("output is empty, stderr: %s", stderrOutput)
+		t.Errorf("expected JSON output but got empty string")
+		return
+	}
+
+	if err := json.Unmarshal([]byte(output), &combined); err != nil {
+		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
+		return
+	}
+
+	// Assert that chdirTemp is NOT in crap violations
+	for _, v := range combined.Crap.Violations {
+		if v.Func == "chdirTemp" {
+			t.Errorf("expected chdirTemp not to be reported in crap section, but found it")
+		}
+	}
+
+	// Exit code should be 0 (no violations)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 (clean), got %d", exitCode)
+	}
+}

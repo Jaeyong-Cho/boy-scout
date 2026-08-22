@@ -15,6 +15,13 @@ import (
 	"gardener-go/internal/gofiles"
 )
 
+// defaultExcludeFiles are excluded from CRAP scoring even when the caller
+// passes no ExcludeFiles of its own. go test -coverprofile never
+// instruments _test.go files, so functionCoverage always returns 0.0 for
+// any function inside one — the CRAP formula is meaningless for test code
+// by construction, not just noisy, so this default has no opt-out flag.
+var defaultExcludeFiles = []string{"*_test.go"}
+
 type Violation struct {
 	File       string  `json:"file"`
 	Line       int     `json:"line"`
@@ -271,7 +278,9 @@ func Check(paths []string, threshold float64, opts Options) (Report, error) {
 	}
 	defer cleanup()
 
-	filesToCheck, excludedFiles, skipped := gofiles.Collect(paths, opts.ExcludeFiles)
+	excludeFiles := append(append([]string{}, defaultExcludeFiles...), opts.ExcludeFiles...)
+	assertf(len(excludeFiles) >= len(defaultExcludeFiles), "crap.Check: merged exclude patterns lost the default test-file exclude")
+	filesToCheck, excludedFiles, skipped := gofiles.Collect(paths, excludeFiles)
 	report.Skipped = append(report.Skipped, skipped...)
 	if opts.Debug {
 		report.ExcludedFiles = append(report.ExcludedFiles, excludedFiles...)
