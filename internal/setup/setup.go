@@ -17,8 +17,8 @@ func assertf(cond bool, format string, args ...any) {
 	}
 }
 
-// Run creates a skill file at baseDir/.agent/skills/gardener-go/SKILL.md and copies
-// the gardener-go binary to baseDir/.agent/bin/gardener-go. It overwrites if they already exist.
+// Run creates a skill file at baseDir/.agents/skills/gardener/SKILL.md and copies
+// the gardener binary to baseDir/.agents/bin/gardener. It overwrites if they already exist.
 // It returns the path to the written skill file.
 func Run(baseDir string, binaryPath string) (string, error) {
 	// Read the embedded skill.md template
@@ -32,8 +32,8 @@ func Run(baseDir string, binaryPath string) (string, error) {
 	assertf(!strings.Contains(string(content), "~/workspace"), "embedded skill.md references a machine-local path; violation explanations must be self-contained")
 
 	// Build the target paths
-	skillPath := filepath.Join(baseDir, ".agents", "skills", "gardener-go", "SKILL.md")
-	binPath := filepath.Join(baseDir, ".agents", "bin", "gardener-go")
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "gardener", "SKILL.md")
+	binPath := filepath.Join(baseDir, ".agents", "bin", "gardener")
 
 	if err := ensureDirs(filepath.Dir(skillPath), filepath.Dir(binPath)); err != nil {
 		return "", err
@@ -48,7 +48,7 @@ func Run(baseDir string, binaryPath string) (string, error) {
 		return "", err
 	}
 
-	assertf(strings.HasSuffix(skillPath, filepath.Join(".agents", "skills", "gardener-go", "SKILL.md")), "unexpected skill path: %s", skillPath)
+	assertf(strings.HasSuffix(skillPath, filepath.Join(".agents", "skills", "gardener", "SKILL.md")), "unexpected skill path: %s", skillPath)
 
 	return skillPath, nil
 }
