@@ -38,7 +38,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func runFunclen(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("funclen", flag.ContinueOnError)
-	maxLines := fs.Int("max-lines", 100, "maximum function length in lines")
+	maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
 	format := fs.String("format", "text", "output format: text or json")
 
 	if err := fs.Parse(args); err != nil {
@@ -84,7 +84,7 @@ func runAll(args []string, stdout, stderr io.Writer) int {
 	var allSkipped []funclen.SkippedFile
 
 	// Run funclen check
-	report, err := funclen.Check(paths, 100)
+	report, err := funclen.Check(paths, 50)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2

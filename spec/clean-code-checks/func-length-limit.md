@@ -9,7 +9,7 @@ timestamp: 2026-08-22T00:00:00+09:00
 # func-length-limit
 
 ## Value to user
-Users can run `gardener funclen` on Go code to identify functions that exceed a configurable line-length threshold (default 100 lines), helping maintain code readability and reduce cognitive complexity before functions land in the codebase.
+Users can run `gardener funclen` on Go code to identify functions that exceed a configurable line-length threshold (default 50 lines), helping maintain code readability and reduce cognitive complexity before functions land in the codebase.
 
 ## Completion criteria
 `gardener funclen [--max-lines=N] [--format=text|json] [paths...]` successfully scans Go files and reports functions exceeding the line limit; `gardener all` runs every registered check (funclen today) and combines their output.
@@ -22,7 +22,7 @@ The `gardener funclen` subcommand:
 - Checks every top-level `*ast.FuncDecl` (functions and methods, including generics; anonymous closures are NOT separately flagged)
 - Recurses into directories, skipping `vendor/` and any dir whose name starts with `.`
 - Outputs as human-readable text by default or JSON with `--format=json`
-- Defaults to limit 100, overridable via `--max-lines=N`
+- Defaults to limit 50, overridable via `--max-lines=N`
 - Skips files that fail to parse with a warning, continues checking the rest
 - Reports exit code 0 if clean, 1 if violations found, 2 if any file was skipped (takes priority over violations)
 

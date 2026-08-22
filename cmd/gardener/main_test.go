@@ -30,8 +30,8 @@ func TestRun_TextFormatMatchesExpectedLine(t *testing.T) {
 
 	// Expect format: "<file>:<line>: function <Name> is <length> lines (limit <limit>)"
 	// The line should be 3 (the opening brace of the function)
-	if !strings.Contains(output, "Violating is 105 lines (limit 100)") {
-		t.Errorf("expected output to contain 'Violating is 105 lines (limit 100)', got:\n%s", output)
+	if !strings.Contains(output, "Violating is 105 lines (limit 50)") {
+		t.Errorf("expected output to contain 'Violating is 105 lines (limit 50)', got:\n%s", output)
 	}
 	if !strings.Contains(output, tmpFile) {
 		t.Errorf("expected output to contain file path %q, got:\n%s", tmpFile, output)
@@ -115,8 +115,8 @@ func TestRun_FunclenDefaultsToCurrentDir(t *testing.T) {
 
 	output := stdoutBuf.String()
 	stderr := stderrBuf.String()
-	if !strings.Contains(output, "Big is 105 lines (limit 100)") {
-		t.Errorf("expected output to contain 'Big is 105 lines (limit 100)', got stdout:\n%s\nstderr:\n%s", output, stderr)
+	if !strings.Contains(output, "Big is 105 lines (limit 50)") {
+		t.Errorf("expected output to contain 'Big is 105 lines (limit 50)', got stdout:\n%s\nstderr:\n%s", output, stderr)
 	}
 
 	if exitCode != 1 {
@@ -169,8 +169,8 @@ func TestRun_JSONFormatOutputsValidSchema(t *testing.T) {
 	}
 
 	v := result.Violations[0]
-	if v.Func != "Violating" || v.Length != 105 || v.Limit != 100 {
-		t.Errorf("expected Violating/105/100, got %s/%d/%d", v.Func, v.Length, v.Limit)
+	if v.Func != "Violating" || v.Length != 105 || v.Limit != 50 {
+		t.Errorf("expected Violating/105/50, got %s/%d/%d", v.Func, v.Length, v.Limit)
 	}
 
 	if exitCode != 1 {
@@ -270,7 +270,7 @@ func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 	exitCode := run([]string{"all", tmpDir}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
-	if !strings.Contains(output, "ViolatingFunc is 105 lines (limit 100)") {
+	if !strings.Contains(output, "ViolatingFunc is 105 lines (limit 50)") {
 		t.Errorf("expected funclen violation in 'all' output, got:\n%s", output)
 	}
 
