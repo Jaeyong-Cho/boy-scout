@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gardener-go/internal/cppfunclen"
 	"gardener-go/internal/crap"
 	"gardener-go/internal/funclen"
 	"gardener-go/internal/setup"
@@ -87,6 +88,9 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 		"funclen": runGoFunclen,
 		"crap":    runGoCrap,
 		"all":     runGoAll,
+	},
+	"cpp": {
+		"funclen": runCppFunclen,
 	},
 }
 
@@ -189,6 +193,38 @@ func runGoCrap(args []string, stdout, stderr io.Writer) int {
 		return renderCrapJSON(report, stdout, stderr)
 	}
 	return renderCrapText(report, stdout, stderr)
+}
+
+func runCppFunclen(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("funclen", flag.ContinueOnError)
+	maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
+	debug := fs.Bool("debug", false, "include excluded functions in output")
+
+	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	opts := cppfunclen.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        *debug,
+	}
+
+	report, err := cppfunclen.Check(paths, *maxLines, opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	if *format == "json" {
+		return renderCppFunclenJSON(report, stdout, stderr)
+	}
+	return renderCppFunclenText(report, stdout, stderr)
 }
 
 // writeCrapLines writes a crap report's violations and excluded entries to w,
@@ -393,6 +429,32 @@ func renderText(report funclen.Report, stdout, stderr io.Writer) int {
 }
 
 func renderJSON(report funclen.Report, stdout, stderr io.Writer) int {
+	data, err := json.Marshal(report)
+	assertf(err == nil, "json.Marshal failed: %v", err)
+
+	fmt.Fprintf(stdout, "%s\n", string(data))
+
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+// writeCppFunclenLines writes a cpp funclen report's violations and excluded entries to w.
+func writeCppFunclenLines(w io.Writer, prefix string, report cppfunclen.Report) {
+	for _, v := range report.Violations {
+		fmt.Fprintf(w, "%s%s:%d: function %s is %d lines (limit %d)\n",
+			prefix, v.File, v.Line, v.Func, v.Length, v.Limit)
+	}
+	for _, exc := range report.ExcludedFuncs {
+		fmt.Fprintf(w, "%s%s: function %s excluded (%s)\n",
+			prefix, exc.File, exc.Func, exc.Reason)
+	}
+}
+
+func renderCppFunclenText(report cppfunclen.Report, stdout, stderr io.Writer) int {
+	writeCppFunclenLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderCppFunclenJSON(report cppfunclen.Report, stdout, stderr io.Writer) int {
 	data, err := json.Marshal(report)
 	assertf(err == nil, "json.Marshal failed: %v", err)
 

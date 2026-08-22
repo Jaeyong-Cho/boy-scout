@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"gardener-go/internal/funcignore"
-	"gardener-go/internal/gofiles"
+	"gardener-go/internal/srcfiles"
 )
 
 // defaultExcludeFiles are excluded from CRAP scoring even when the caller
@@ -32,7 +32,7 @@ type Violation struct {
 	Threshold  float64 `json:"threshold"`
 }
 
-type SkippedFile = gofiles.SkippedFile
+type SkippedFile = srcfiles.SkippedFile
 
 type ExcludedFunc struct {
 	File   string `json:"file"`
@@ -280,7 +280,7 @@ func Check(paths []string, threshold float64, opts Options) (Report, error) {
 
 	excludeFiles := append(append([]string{}, defaultExcludeFiles...), opts.ExcludeFiles...)
 	assertf(len(excludeFiles) >= len(defaultExcludeFiles), "crap.Check: merged exclude patterns lost the default test-file exclude")
-	filesToCheck, excludedFiles, skipped := gofiles.Collect(paths, excludeFiles)
+	filesToCheck, excludedFiles, skipped := srcfiles.Collect(paths, []string{".go"}, excludeFiles)
 	report.Skipped = append(report.Skipped, skipped...)
 	if opts.Debug {
 		report.ExcludedFiles = append(report.ExcludedFiles, excludedFiles...)

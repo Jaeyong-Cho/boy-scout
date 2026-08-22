@@ -7,7 +7,7 @@ import (
 	"go/token"
 
 	"gardener-go/internal/funcignore"
-	"gardener-go/internal/gofiles"
+	"gardener-go/internal/srcfiles"
 )
 
 type Violation struct {
@@ -18,9 +18,9 @@ type Violation struct {
 	Limit  int
 }
 
-// SkippedFile is a type alias for gofiles.SkippedFile, preserving the existing
+// SkippedFile is a type alias for srcfiles.SkippedFile, preserving the existing
 // JSON field names and shape of the Violation output.
-type SkippedFile = gofiles.SkippedFile
+type SkippedFile = srcfiles.SkippedFile
 
 type ExcludedFunc struct {
 	File   string
@@ -115,7 +115,7 @@ func Check(paths []string, maxLines int, opts Options) (Report, error) {
 	}
 
 	// Collect all .go files from the given paths
-	filesToCheck, excludedFiles, skipped := gofiles.Collect(paths, opts.ExcludeFiles)
+	filesToCheck, excludedFiles, skipped := srcfiles.Collect(paths, []string{".go"}, opts.ExcludeFiles)
 	report.Skipped = append(report.Skipped, skipped...)
 	if opts.Debug {
 		report.ExcludedFiles = append(report.ExcludedFiles, excludedFiles...)
