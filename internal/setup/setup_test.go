@@ -150,3 +150,59 @@ func TestRun_ReturnsErrorWhenDirUnwritable(t *testing.T) {
 		t.Errorf("expected error about directory creation, got: %v", err)
 	}
 }
+
+func TestRun_TemplateDeclaresTDDRefactorAndViolationGuidance(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	cases := []struct {
+		name   string
+		marker string
+	}{
+		{"BaselineGreenGate", "tests were already failing before any gardener-go edit"},
+		{"FunclenExplainsCleanCodeRule", "one level of abstraction"},
+		{"CrapExplainsCleanCodeRule", "high complexity plus low test coverage"},
+		{"CharacterizationTestForZeroCoverage", "characterization test"},
+		{"AttemptCapIncludesCharacterizationTest", "including its characterization test"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if !strings.Contains(contentStr, c.marker) {
+				t.Errorf("expected skill template to contain %q, got:\n%s", c.marker, contentStr)
+			}
+		})
+	}
+}
+
+func TestRun_TemplateHasNoMachineLocalPath(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	if strings.Contains(contentStr, "/Users/") {
+		t.Errorf("expected skill template to not contain /Users/, got:\n%s", contentStr)
+	}
+	if strings.Contains(contentStr, "~/workspace") {
+		t.Errorf("expected skill template to not contain ~/workspace, got:\n%s", contentStr)
+	}
+}
