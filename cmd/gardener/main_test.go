@@ -786,7 +786,7 @@ func TestRun_SetupLocalWritesRelativeSkillFile(t *testing.T) {
 	})
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"setup"}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"setup", "agents"}, &stdoutBuf, &stderrBuf)
 
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
@@ -816,7 +816,7 @@ func TestRun_SetupGlobalWritesToHomeDir(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"setup", "--global"}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"setup", "agents", "--global"}, &stdoutBuf, &stderrBuf)
 
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
@@ -857,7 +857,7 @@ func TestRun_SetupRejectsExtraArgs(t *testing.T) {
 	})
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"setup", "extra-arg"}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"setup", "agents", "extra-arg"}, &stdoutBuf, &stderrBuf)
 
 	if exitCode != 2 {
 		t.Errorf("expected exit code 2 for usage error, got %d", exitCode)
@@ -898,7 +898,7 @@ func TestRun_SetupWriteFailureExitsTwo(t *testing.T) {
 	})
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"setup"}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"setup", "agents"}, &stdoutBuf, &stderrBuf)
 
 	if exitCode != 2 {
 		t.Errorf("expected exit code 2 for write failure, got %d", exitCode)
@@ -1133,5 +1133,275 @@ func TestRun_CppUnregisteredSubcommandExitsUsageError(t *testing.T) {
 
 	if exitCode != 2 {
 		t.Errorf("expected exit code 2, got %d", exitCode)
+	}
+}
+
+func TestPromptForTarget_NumericSelection(t *testing.T) {
+	stdin := strings.NewReader("2\n")
+	var stdout bytes.Buffer
+
+	name, err := promptForTarget(stdin, &stdout)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if name != "copilot" {
+		t.Errorf("expected 'copilot', got %q", name)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "1) claude") {
+		t.Errorf("expected '1) claude' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "2) copilot") {
+		t.Errorf("expected '2) copilot' in output, got:\n%s", output)
+	}
+}
+
+func TestPromptForTarget_NameSelection(t *testing.T) {
+	stdin := strings.NewReader("pi\n")
+	var stdout bytes.Buffer
+
+	name, err := promptForTarget(stdin, &stdout)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if name != "pi" {
+		t.Errorf("expected 'pi', got %q", name)
+	}
+}
+
+func TestPromptForTarget_InvalidSelectionReturnsError(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		wantErr  bool
+	}{
+		{"invalid index", "99\n", true},
+		{"invalid name", "nope\n", true},
+		{"empty input", "\n", true},
+		{"EOF", "", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdin := strings.NewReader(tc.input)
+			var stdout bytes.Buffer
+
+			name, err := promptForTarget(stdin, &stdout)
+			if !tc.wantErr && err != nil {
+				t.Errorf("expected no error, got %v", err)
+			}
+			if tc.wantErr && err == nil {
+				t.Errorf("expected error, got none (returned name=%q)", name)
+			}
+		})
+	}
+}
+
+func TestRun_SetupClaudeWritesClaudeSkillPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "claude"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	skillPath := filepath.Join(tmpDir, ".claude", "skills", "gardener", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Fatalf("skill file not found at %q: %v", skillPath, err)
+	}
+
+	binPath := filepath.Join(tmpDir, ".claude", "bin", "gardener")
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("binary not found at %q: %v", binPath, err)
+	}
+}
+
+func TestRun_SetupCopilotWritesCopilotSkillPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "copilot"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	skillPath := filepath.Join(tmpDir, ".copilot", "skills", "gardener", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Fatalf("skill file not found at %q: %v", skillPath, err)
+	}
+
+	binPath := filepath.Join(tmpDir, ".copilot", "bin", "gardener")
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("binary not found at %q: %v", binPath, err)
+	}
+}
+
+func TestRun_SetupPiWritesPiAgentSkillPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "pi"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	skillPath := filepath.Join(tmpDir, ".pi", "agent", "skills", "gardener", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Fatalf("skill file not found at %q: %v", skillPath, err)
+	}
+
+	binPath := filepath.Join(tmpDir, ".pi", "agent", "bin", "gardener")
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("binary not found at %q: %v", binPath, err)
+	}
+}
+
+func TestRun_SetupUnknownTargetIsUsageError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "bogus"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2, got %d", exitCode)
+	}
+
+	stderr := stderrBuf.String()
+	if !strings.Contains(stderr, "error:") || !strings.Contains(stderr, "unknown target") {
+		t.Errorf("expected 'unknown target' error in stderr, got: %s", stderr)
+	}
+
+	// Verify no directory was created
+	for _, prefix := range []string{".agents", ".claude", ".copilot", ".pi", ".bogus"} {
+		dirPath := filepath.Join(tmpDir, prefix)
+		if _, err := os.Stat(dirPath); err == nil {
+			t.Errorf("expected %s directory not to be created for unknown target", prefix)
+		}
+	}
+}
+
+func TestRun_SetupNoTargetNonInteractiveIsUsageError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	// Call runSetup directly with a non-interactive stdin (strings.Reader, not os.Stdin)
+	stdin := strings.NewReader("")
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := runSetup([]string{}, stdin, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2, got %d", exitCode)
+	}
+
+	stderr := stderrBuf.String()
+	// Should list valid targets
+	if !strings.Contains(stderr, "claude") || !strings.Contains(stderr, "copilot") {
+		t.Errorf("expected valid targets listed in stderr, got: %s", stderr)
+	}
+
+	// Verify no files were written
+	for _, prefix := range []string{".agents", ".claude", ".copilot", ".pi"} {
+		dirPath := filepath.Join(tmpDir, prefix)
+		if _, err := os.Stat(dirPath); err == nil {
+			t.Errorf("expected %s directory not to be created for non-interactive no-target", prefix)
+		}
+	}
+}
+
+func TestRun_SetupGlobalFlagComposesInEitherOrder(t *testing.T) {
+	testCases := []struct {
+		name string
+		args []string
+	}{
+		{"target then flag", []string{"setup", "claude", "--global"}},
+		{"flag then target", []string{"setup", "--global", "claude"}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+
+			var stdoutBuf, stderrBuf bytes.Buffer
+			exitCode := run(tc.args, &stdoutBuf, &stderrBuf)
+
+			if exitCode != 0 {
+				t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+			}
+
+			skillPath := filepath.Join(homeDir, ".claude", "skills", "gardener", "SKILL.md")
+			if _, err := os.Stat(skillPath); err != nil {
+				t.Fatalf("skill file not found at %q: %v", skillPath, err)
+			}
+		})
 	}
 }

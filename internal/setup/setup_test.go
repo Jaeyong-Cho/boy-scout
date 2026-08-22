@@ -10,7 +10,7 @@ import (
 func TestRun_CreatesSkillFileAtBaseDir(t *testing.T) {
 	baseDir := t.TempDir()
 
-	path, err := Run(baseDir, "")
+	path, err := Run(baseDir, "", ".agents")
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestRun_OverwritesExistingSkillFile(t *testing.T) {
 	baseDir := t.TempDir()
 
 	// First run
-	path1, err := Run(baseDir, "")
+	path1, err := Run(baseDir, "", ".agents")
 	if err != nil {
 		t.Fatalf("first Run failed: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestRun_OverwritesExistingSkillFile(t *testing.T) {
 	}
 
 	// Second run (should overwrite without error)
-	path2, err := Run(baseDir, "")
+	path2, err := Run(baseDir, "", ".agents")
 	if err != nil {
 		t.Fatalf("second Run failed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestRun_OverwritesExistingSkillFile(t *testing.T) {
 func TestRun_TemplateDeclaresUserInvokedFixLoop(t *testing.T) {
 	baseDir := t.TempDir()
 
-	path, err := Run(baseDir, "")
+	path, err := Run(baseDir, "", ".agents")
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestRun_CopiesBinaryWhenPathGiven(t *testing.T) {
 		t.Fatalf("failed to write fake binary: %v", err)
 	}
 
-	_, err := Run(baseDir, binarySrc)
+	_, err := Run(baseDir, binarySrc, ".agents")
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestRun_ReturnsErrorWhenDirUnwritable(t *testing.T) {
 		t.Fatalf("failed to create blocking file: %v", err)
 	}
 
-	path, err := Run(tmpDir, "")
+	path, err := Run(tmpDir, "", ".agents")
 	if err == nil {
 		t.Fatalf("expected error when directory is unwritable, but got none")
 	}
@@ -155,7 +155,7 @@ func TestRun_ReturnsErrorWhenBinaryUnreadable(t *testing.T) {
 	baseDir := t.TempDir()
 	missingBinary := filepath.Join(t.TempDir(), "does-not-exist")
 
-	path, err := Run(baseDir, missingBinary)
+	path, err := Run(baseDir, missingBinary, ".agents")
 	if err == nil {
 		t.Fatalf("expected error when binary path is unreadable, but got none")
 	}
@@ -174,7 +174,7 @@ func TestRun_ReturnsErrorWhenSkillFileIsDirectory(t *testing.T) {
 		t.Fatalf("failed to pre-create skill path as directory: %v", err)
 	}
 
-	path, err := Run(baseDir, "")
+	path, err := Run(baseDir, "", ".agents")
 	if err == nil {
 		t.Fatalf("expected error when skill file path is a directory, but got none")
 	}
@@ -189,7 +189,7 @@ func TestRun_ReturnsErrorWhenSkillFileIsDirectory(t *testing.T) {
 func TestRun_TemplateDeclaresTDDRefactorAndViolationGuidance(t *testing.T) {
 	baseDir := t.TempDir()
 
-	path, err := Run(baseDir, "")
+	path, err := Run(baseDir, "", ".agents")
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestRun_TemplateDeclaresTDDRefactorAndViolationGuidance(t *testing.T) {
 func TestRun_TemplateHasNoMachineLocalPath(t *testing.T) {
 	baseDir := t.TempDir()
 
-	path, err := Run(baseDir, "")
+	path, err := Run(baseDir, "", ".agents")
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -239,5 +239,46 @@ func TestRun_TemplateHasNoMachineLocalPath(t *testing.T) {
 	}
 	if strings.Contains(contentStr, "~/workspace") {
 		t.Errorf("expected skill template to not contain ~/workspace, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_UsesGivenPrefixForSkillAndBinPaths(t *testing.T) {
+	baseDir := t.TempDir()
+
+	binarySrc := filepath.Join(t.TempDir(), "gardener")
+	if err := os.WriteFile(binarySrc, []byte("fake binary content"), 0755); err != nil {
+		t.Fatalf("failed to write fake binary: %v", err)
+	}
+
+	path, err := Run(baseDir, binarySrc, ".claude")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Verify the skill file path uses .claude prefix
+	expectedSkillPath := filepath.Join(baseDir, ".claude", "skills", "gardener", "SKILL.md")
+	if path != expectedSkillPath {
+		t.Errorf("expected skill path %q, got %q", expectedSkillPath, path)
+	}
+
+	// Verify the skill file exists
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("skill file not found at %q: %v", path, err)
+	}
+
+	// Verify the binary was copied to .claude
+	expectedBinPath := filepath.Join(baseDir, ".claude", "bin", "gardener")
+	content, err := os.ReadFile(expectedBinPath)
+	if err != nil {
+		t.Fatalf("expected binary copied to %q: %v", expectedBinPath, err)
+	}
+	if string(content) != "fake binary content" {
+		t.Errorf("expected copied binary content to match source, got %q", content)
+	}
+
+	// Verify .agents directory was not created
+	agentsPath := filepath.Join(baseDir, ".agents")
+	if _, err := os.Stat(agentsPath); err == nil {
+		t.Errorf("expected .agents directory not to be created when using .claude prefix")
 	}
 }

@@ -11,4 +11,5 @@ The first Story in this EPIC is the `gardener setup` subcommand, which auto-inst
 
 ## Stories
 - [setup-command](./setup-command.md)
+- [setup-multi-agent-targets](./setup-multi-agent-targets.md)
 - [tdd-refactor-and-violation-guidance](./tdd-refactor-and-violation-guidance.md)
