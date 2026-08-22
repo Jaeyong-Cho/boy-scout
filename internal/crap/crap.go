@@ -145,8 +145,15 @@ func Check(paths []string, threshold float64) (Report, error) {
 			continue
 		}
 
-		// Compute the expected import path
-		relPath, _ := filepath.Rel(moduleRoot, filePath)
+		// Compute the expected import path. filePath may be relative (as collected
+		// from CLI args) while moduleRoot is always absolute, so filepath.Rel would
+		// silently fail (err ignored) and yield an empty relPath, making every file
+		// miss its coverage entry. Resolve to absolute first so Rel always succeeds.
+		absFilePath, err := filepath.Abs(filePath)
+		if err != nil {
+			absFilePath = filePath
+		}
+		relPath, _ := filepath.Rel(moduleRoot, absFilePath)
 		importPath := modulePath + "/" + strings.ReplaceAll(relPath, string(filepath.Separator), "/")
 
 		// Check if this file has coverage entries
