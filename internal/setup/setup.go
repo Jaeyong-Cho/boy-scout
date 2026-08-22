@@ -28,8 +28,8 @@ func Run(baseDir string, binaryPath string) (string, error) {
 	}
 
 	assertf(len(content) > 0, "embedded skill.md is empty")
-	assertf(!strings.Contains(string(content), "/Users/") && !strings.Contains(string(content), "~/workspace"),
-		"embedded skill.md references a machine-local path; violation explanations must be self-contained")
+	assertf(!strings.Contains(string(content), "/Users/"), "embedded skill.md references a machine-local path; violation explanations must be self-contained")
+	assertf(!strings.Contains(string(content), "~/workspace"), "embedded skill.md references a machine-local path; violation explanations must be self-contained")
 
 	// Build the target paths
 	skillPath := filepath.Join(baseDir, ".agents", "skills", "gardener-go", "SKILL.md")

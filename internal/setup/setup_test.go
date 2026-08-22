@@ -151,6 +151,41 @@ func TestRun_ReturnsErrorWhenDirUnwritable(t *testing.T) {
 	}
 }
 
+func TestRun_ReturnsErrorWhenBinaryUnreadable(t *testing.T) {
+	baseDir := t.TempDir()
+	missingBinary := filepath.Join(t.TempDir(), "does-not-exist")
+
+	path, err := Run(baseDir, missingBinary)
+	if err == nil {
+		t.Fatalf("expected error when binary path is unreadable, but got none")
+	}
+	if path != "" {
+		t.Errorf("expected empty path on error, got %q", path)
+	}
+	if !strings.Contains(err.Error(), "failed to read binary") {
+		t.Errorf("expected error about reading binary, got: %v", err)
+	}
+}
+
+func TestRun_ReturnsErrorWhenSkillFileIsDirectory(t *testing.T) {
+	baseDir := t.TempDir()
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "gardener-go", "SKILL.md")
+	if err := os.MkdirAll(skillPath, 0755); err != nil {
+		t.Fatalf("failed to pre-create skill path as directory: %v", err)
+	}
+
+	path, err := Run(baseDir, "")
+	if err == nil {
+		t.Fatalf("expected error when skill file path is a directory, but got none")
+	}
+	if path != "" {
+		t.Errorf("expected empty path on error, got %q", path)
+	}
+	if !strings.Contains(err.Error(), "failed to write skill file") {
+		t.Errorf("expected error about writing skill file, got: %v", err)
+	}
+}
+
 func TestRun_TemplateDeclaresTDDRefactorAndViolationGuidance(t *testing.T) {
 	baseDir := t.TempDir()
 
