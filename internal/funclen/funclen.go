@@ -72,6 +72,62 @@ func excludeFuncReason(fn *ast.FuncDecl, patterns []string) (bool, string) {
 	return false, ""
 }
 
+// evalFuncLen checks a single function's length, or reports why it was excluded.
+// Exactly one of the two return values is non-nil.
+func evalFuncLen(fn *ast.FuncDecl, fset *token.FileSet, filePath string, maxLines int, opts Options) (*Violation, *ExcludedFunc) {
+	// Calculate function length: from opening { to closing }, inclusive
+	startLine := fset.Position(fn.Body.Pos()).Line
+	endLine := fset.Position(fn.Body.End()).Line
+	length := endLine - startLine + 1
+
+	if excluded, reason := excludeFuncReason(fn, opts.ExcludeFuncs); excluded {
+		if !opts.Debug {
+			return nil, nil
+		}
+		return nil, &ExcludedFunc{File: filePath, Line: startLine, Func: fn.Name.Name, Reason: reason}
+	}
+
+	if length <= maxLines {
+		return nil, nil
+	}
+
+	assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
+	return &Violation{File: filePath, Line: startLine, Func: fn.Name.Name, Length: length, Limit: maxLines}, nil
+}
+
+// scanFileForLength parses filePath and evaluates the length of every non-excluded
+// function in it. skipped is non-nil if the file itself couldn't be parsed.
+func scanFileForLength(filePath string, maxLines int, opts Options) (violations []Violation, excludedFuncs []ExcludedFunc, skipped *SkippedFile) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	if err != nil {
+		return nil, nil, &SkippedFile{File: filePath, Error: err.Error()}
+	}
+
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+
+		violation, excluded := evalFuncLen(fn, fset, filePath, maxLines, opts)
+		violations, excludedFuncs = appendEvalResult(violations, excludedFuncs, violation, excluded)
+	}
+
+	return violations, excludedFuncs, nil
+}
+
+// appendEvalResult appends violation/excluded to the respective slice if non-nil.
+func appendEvalResult(violations []Violation, excludedFuncs []ExcludedFunc, violation *Violation, excluded *ExcludedFunc) ([]Violation, []ExcludedFunc) {
+	if violation != nil {
+		violations = append(violations, *violation)
+	}
+	if excluded != nil {
+		excludedFuncs = append(excludedFuncs, *excluded)
+	}
+	return violations, excludedFuncs
+}
+
 func Check(paths []string, maxLines int, opts Options) (Report, error) {
 	assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
 
@@ -89,53 +145,15 @@ func Check(paths []string, maxLines int, opts Options) (Report, error) {
 		report.ExcludedFiles = append(report.ExcludedFiles, excludedFiles...)
 	}
 
-	// Check each collected file
 	for _, filePath := range filesToCheck {
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
-		if err != nil {
-			report.Skipped = append(report.Skipped, SkippedFile{
-				File:  filePath,
-				Error: err.Error(),
-			})
+		violations, excludedFuncs, skippedFile := scanFileForLength(filePath, maxLines, opts)
+		if skippedFile != nil {
+			report.Skipped = append(report.Skipped, *skippedFile)
 			continue
 		}
-
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-
-			// Calculate function length: from opening { to closing }, inclusive
-			startLine := fset.Position(fn.Body.Pos()).Line
-			endLine := fset.Position(fn.Body.End()).Line
-			length := endLine - startLine + 1
-
-			// Check if function is excluded
-			excluded, reason := excludeFuncReason(fn, opts.ExcludeFuncs)
-			if excluded {
-				if opts.Debug {
-					report.ExcludedFuncs = append(report.ExcludedFuncs, ExcludedFunc{
-						File:   filePath,
-						Line:   startLine,
-						Func:   fn.Name.Name,
-						Reason: reason,
-					})
-				}
-				continue
-			}
-
-			if length > maxLines {
-				assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
-				report.Violations = append(report.Violations, Violation{
-					File:   filePath,
-					Line:   startLine,
-					Func:   fn.Name.Name,
-					Length: length,
-					Limit:  maxLines,
-				})
-			}
+		report.Violations = append(report.Violations, violations...)
+		if opts.Debug {
+			report.ExcludedFuncs = append(report.ExcludedFuncs, excludedFuncs...)
 		}
 	}
 

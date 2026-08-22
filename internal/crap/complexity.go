@@ -32,29 +32,36 @@ func cyclomaticComplexity(fn *ast.FuncDecl) int {
 	}
 
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		switch stmt := n.(type) {
-		case *ast.IfStmt:
-			complexity++
-		case *ast.ForStmt:
-			complexity++
-		case *ast.RangeStmt:
-			complexity++
-		case *ast.CaseClause:
-			if stmt.List != nil {
-				complexity++
-			}
-		case *ast.CommClause:
-			if stmt.Comm != nil {
-				complexity++
-			}
-		case *ast.BinaryExpr:
-			if stmt.Op == token.LAND || stmt.Op == token.LOR {
-				complexity++
-			}
-		}
+		complexity += nodeComplexity(n)
 		return true
 	})
 
 	assertf(complexity >= 1, "complexity must be >=1, got %d for func %s", complexity, fn.Name.Name)
 	return complexity
+}
+
+// logicalOps are the binary operators that add to cyclomatic complexity.
+var logicalOps = map[token.Token]bool{token.LAND: true, token.LOR: true}
+
+// nodeComplexity returns the cyclomatic complexity contribution of a single AST node,
+// per the rules documented on cyclomaticComplexity.
+func nodeComplexity(n ast.Node) int {
+	switch stmt := n.(type) {
+	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt:
+		return 1
+	case *ast.CaseClause:
+		return boolToInt(stmt.List != nil)
+	case *ast.CommClause:
+		return boolToInt(stmt.Comm != nil)
+	case *ast.BinaryExpr:
+		return boolToInt(logicalOps[stmt.Op])
+	}
+	return 0
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

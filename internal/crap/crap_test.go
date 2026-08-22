@@ -46,94 +46,80 @@ func TestEvaluate_ScoreOverThresholdIsViolation(t *testing.T) {
 	}
 }
 
-func TestCheck_MissingGoModReturnsError(t *testing.T) {
-	// Create a temp directory with no go.mod anywhere above
+// chdirTemp creates a temp dir, chdirs into it, and restores the original cwd on cleanup.
+func chdirTemp(t *testing.T) {
+	t.Helper()
 	tmpDir := t.TempDir()
 	oldCwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("failed to get cwd: %v", err)
 	}
-	defer os.Chdir(oldCwd)
-
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to chdir: %v", err)
 	}
+	t.Cleanup(func() { os.Chdir(oldCwd) })
+}
 
-	_, err = Check([]string{"."}, 6.0, Options{})
+// writeFile writes content to path in the current directory.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
+	}
+}
+
+// writeFixtureModule chdirs into a fresh temp dir and writes a go.mod for it.
+func writeFixtureModule(t *testing.T) {
+	t.Helper()
+	chdirTemp(t)
+	writeFile(t, "go.mod", "module fixture\n\ngo 1.24\n")
+}
+
+func TestCheck_MissingGoModReturnsError(t *testing.T) {
+	// Create a temp directory with no go.mod anywhere above
+	chdirTemp(t)
+
+	_, err := Check([]string{"."}, 6.0, Options{})
 	if err == nil {
 		t.Errorf("expected error when go.mod is missing")
 	}
 }
 
 func TestCheck_BuildFailureReturnsError(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get cwd: %v", err)
-	}
-	defer os.Chdir(oldCwd)
-
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to chdir: %v", err)
-	}
-
-	// Write a go.mod file
-	if err := os.WriteFile("go.mod", []byte("module fixture\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("failed to write go.mod: %v", err)
-	}
+	writeFixtureModule(t)
 
 	// Write a .go file with invalid syntax - missing closing brace
-	if err := os.WriteFile("main.go", []byte(`package main
+	writeFile(t, "main.go", `package main
 func F() int {
 	return 1
-`), 0644); err != nil {
-		t.Fatalf("failed to write main.go: %v", err)
-	}
+`)
 
 	// Write a test file (so go test actually tries to compile)
-	if err := os.WriteFile("main_test.go", []byte(`package main
+	writeFile(t, "main_test.go", `package main
 import "testing"
 func TestF(t *testing.T) {
 	_ = F()
 }
-`), 0644); err != nil {
-		t.Fatalf("failed to write main_test.go: %v", err)
-	}
+`)
 
-	_, err = Check([]string{"."}, 6.0, Options{})
+	_, err := Check([]string{"."}, 6.0, Options{})
 	if err == nil {
 		t.Errorf("expected error when go test fails to build")
 	}
 }
 
 func TestCheck_TestFailureStillScoresWithPartialCoverage(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get cwd: %v", err)
-	}
-	defer os.Chdir(oldCwd)
-
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to chdir: %v", err)
-	}
-
-	// Write a go.mod file
-	if err := os.WriteFile("go.mod", []byte("module fixture\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("failed to write go.mod: %v", err)
-	}
+	writeFixtureModule(t)
 
 	// Write a simple package
-	if err := os.WriteFile("main.go", []byte(`package main
+	writeFile(t, "main.go", `package main
 func Add(a, b int) int {
 	return a + b
 }
-`), 0644); err != nil {
-		t.Fatalf("failed to write main.go: %v", err)
-	}
+`)
 
 	// Write a test file that exercises the function but fails
-	if err := os.WriteFile("main_test.go", []byte(`package main
+	writeFile(t, "main_test.go", `package main
 import "testing"
 
 func TestAdd(t *testing.T) {
@@ -141,9 +127,7 @@ func TestAdd(t *testing.T) {
 	_ = result
 	t.Fatal("intentional failure")
 }
-`), 0644); err != nil {
-		t.Fatalf("failed to write main_test.go: %v", err)
-	}
+`)
 
 	// Check should succeed (with the partial coverage)
 	report, err := Check([]string{"."}, 6.0, Options{})
@@ -159,24 +143,10 @@ func TestAdd(t *testing.T) {
 }
 
 func TestCheck_ReportsViolationForComplexUntestedFunction(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get cwd: %v", err)
-	}
-	defer os.Chdir(oldCwd)
-
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to chdir: %v", err)
-	}
-
-	// Write a go.mod file
-	if err := os.WriteFile("go.mod", []byte("module fixture\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("failed to write go.mod: %v", err)
-	}
+	writeFixtureModule(t)
 
 	// Write a function with multiple branches and no test
-	if err := os.WriteFile("main.go", []byte(`package main
+	writeFile(t, "main.go", `package main
 func ComplexFunc(x int) string {
 	if x > 10 {
 		if x > 20 {
@@ -189,9 +159,7 @@ func ComplexFunc(x int) string {
 	}
 	return "small"
 }
-`), 0644); err != nil {
-		t.Fatalf("failed to write main.go: %v", err)
-	}
+`)
 
 	// Check with a low threshold
 	report, err := Check([]string{"."}, 1.0, Options{})
@@ -204,66 +172,48 @@ func ComplexFunc(x int) string {
 		t.Errorf("expected at least one violation for untested complex function")
 	}
 
-	// Find the ComplexFunc violation
-	found := false
-	for _, v := range report.Violations {
-		if v.Func == "ComplexFunc" {
-			found = true
-			// Verify fields
-			if v.File != "main.go" {
-				t.Errorf("expected file main.go, got %s", v.File)
-			}
-			if v.Complexity <= 0 {
-				t.Errorf("expected positive complexity, got %d", v.Complexity)
-			}
-			if v.Coverage != 0.0 {
-				t.Errorf("expected 0 coverage for untested function, got %f", v.Coverage)
-			}
-			if v.Score <= 0.0 {
-				t.Errorf("expected positive score, got %f", v.Score)
-			}
-			break
+	v := mustFindViolation(t, report.Violations, "ComplexFunc")
+	if v.File != "main.go" {
+		t.Errorf("expected file main.go, got %s", v.File)
+	}
+	if v.Complexity <= 0 {
+		t.Errorf("expected positive complexity, got %d", v.Complexity)
+	}
+	if v.Coverage != 0.0 {
+		t.Errorf("expected 0 coverage for untested function, got %f", v.Coverage)
+	}
+	if v.Score <= 0.0 {
+		t.Errorf("expected positive score, got %f", v.Score)
+	}
+}
+
+// mustFindViolation returns the violation for funcName, failing the test if absent.
+func mustFindViolation(t *testing.T, violations []Violation, funcName string) Violation {
+	t.Helper()
+	for _, v := range violations {
+		if v.Func == funcName {
+			return v
 		}
 	}
-
-	if !found {
-		t.Errorf("expected ComplexFunc in violations, got: %v", report.Violations)
-	}
+	t.Fatalf("expected %s in violations, got: %v", funcName, violations)
+	return Violation{}
 }
 
 func TestCheck_ExcludeFileSkipsFileAndReportsWhenDebug(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get cwd: %v", err)
-	}
-	defer os.Chdir(oldCwd)
-
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to chdir: %v", err)
-	}
-
-	// Write a go.mod file
-	if err := os.WriteFile("go.mod", []byte("module fixture\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("failed to write go.mod: %v", err)
-	}
+	writeFixtureModule(t)
 
 	// Write main.go with a complex untested function
-	if err := os.WriteFile("main.go", []byte(`package main
+	writeFile(t, "main.go", `package main
 func ComplexFunc() {
 	if true { if true { if true { if true { if true { } } } } }
 }
-`), 0644); err != nil {
-		t.Fatalf("failed to write main.go: %v", err)
-	}
+`)
 
 	// Write main_test.go to satisfy go test
-	if err := os.WriteFile("main_test.go", []byte(`package main
+	writeFile(t, "main_test.go", `package main
 import "testing"
 func TestDummy(t *testing.T) {}
-`), 0644); err != nil {
-		t.Fatalf("failed to write main_test.go: %v", err)
-	}
+`)
 
 	// Run with exclude-file debug on
 	report, err := Check([]string{"."}, 6.0, Options{
@@ -280,38 +230,20 @@ func TestDummy(t *testing.T) {}
 }
 
 func TestCheck_ExcludedItemsHiddenUnlessDebug(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get cwd: %v", err)
-	}
-	defer os.Chdir(oldCwd)
-
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to chdir: %v", err)
-	}
-
-	// Write a go.mod file
-	if err := os.WriteFile("go.mod", []byte("module fixture\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("failed to write go.mod: %v", err)
-	}
+	writeFixtureModule(t)
 
 	// Write main.go with a complex untested function
-	if err := os.WriteFile("main.go", []byte(`package main
+	writeFile(t, "main.go", `package main
 func ComplexFunc() {
 	if true { if true { if true { if true { if true { } } } } }
 }
-`), 0644); err != nil {
-		t.Fatalf("failed to write main.go: %v", err)
-	}
+`)
 
 	// Write main_test.go
-	if err := os.WriteFile("main_test.go", []byte(`package main
+	writeFile(t, "main_test.go", `package main
 import "testing"
 func TestDummy(t *testing.T) {}
-`), 0644); err != nil {
-		t.Fatalf("failed to write main_test.go: %v", err)
-	}
+`)
 
 	// Run with exclude-file debug off
 	report, err := Check([]string{"."}, 6.0, Options{
@@ -327,5 +259,68 @@ func TestDummy(t *testing.T) {}
 	}
 	if len(report.ExcludedFuncs) != 0 {
 		t.Errorf("expected 0 excluded funcs when debug=false, got %d", len(report.ExcludedFuncs))
+	}
+}
+
+func TestCheck_ExcludeFuncByNamePattern(t *testing.T) {
+	writeFixtureModule(t)
+
+	writeFile(t, "main.go", `package main
+func ComplexFunc() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestDummy(t *testing.T) {}
+`)
+
+	report, err := Check([]string{"."}, 6.0, Options{
+		ExcludeFuncs: []string{"Complex*"},
+		Debug:        true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("expected 0 violations with exclude pattern, got %d", len(report.Violations))
+	}
+	if len(report.ExcludedFuncs) != 1 {
+		t.Fatalf("expected 1 excluded func, got %d", len(report.ExcludedFuncs))
+	}
+	if report.ExcludedFuncs[0].Reason != "flag" {
+		t.Errorf("expected reason=flag, got %q", report.ExcludedFuncs[0].Reason)
+	}
+}
+
+func TestCheck_ExcludeFuncByCommentDirective(t *testing.T) {
+	writeFixtureModule(t)
+
+	writeFile(t, "main.go", `package main
+
+// gardener:ignore
+func ComplexFunc() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestDummy(t *testing.T) {}
+`)
+
+	report, err := Check([]string{"."}, 6.0, Options{Debug: true})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("expected 0 violations with comment directive, got %d", len(report.Violations))
+	}
+	if len(report.ExcludedFuncs) != 1 {
+		t.Fatalf("expected 1 excluded func, got %d", len(report.ExcludedFuncs))
+	}
+	if report.ExcludedFuncs[0].Reason != "comment" {
+		t.Errorf("expected reason=comment, got %q", report.ExcludedFuncs[0].Reason)
 	}
 }

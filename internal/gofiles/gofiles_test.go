@@ -6,45 +6,26 @@ import (
 	"testing"
 )
 
+// writeGoFile writes content to path, creating any parent directories needed.
+func writeGoFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("failed to mkdir for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
+	}
+}
+
 func TestCollect_WalksDirectoryRecursivelySkippingVendorAndDotDirs(t *testing.T) {
-	// Create a temporary directory tree
+	// Create a temporary directory tree: a normal subdir, a vendor/ dir and a
+	// dot-dir (both should be skipped), and a root-level file.
 	tmpDir := t.TempDir()
 
-	// Create a normal subdirectory with a .go file
-	normalDir := filepath.Join(tmpDir, "normal")
-	if err := os.Mkdir(normalDir, 0755); err != nil {
-		t.Fatalf("failed to create normal dir: %v", err)
-	}
-	normalFile := filepath.Join(normalDir, "normal.go")
-	if err := os.WriteFile(normalFile, []byte("package main\n"), 0644); err != nil {
-		t.Fatalf("failed to write normal.go: %v", err)
-	}
-
-	// Create a vendor directory with a .go file (should be skipped)
-	vendorDir := filepath.Join(tmpDir, "vendor")
-	if err := os.Mkdir(vendorDir, 0755); err != nil {
-		t.Fatalf("failed to create vendor dir: %v", err)
-	}
-	vendorFile := filepath.Join(vendorDir, "vendor.go")
-	if err := os.WriteFile(vendorFile, []byte("package main\n"), 0644); err != nil {
-		t.Fatalf("failed to write vendor.go: %v", err)
-	}
-
-	// Create a dot directory with a .go file (should be skipped)
-	dotDir := filepath.Join(tmpDir, ".hidden")
-	if err := os.Mkdir(dotDir, 0755); err != nil {
-		t.Fatalf("failed to create dot dir: %v", err)
-	}
-	dotFile := filepath.Join(dotDir, "hidden.go")
-	if err := os.WriteFile(dotFile, []byte("package main\n"), 0644); err != nil {
-		t.Fatalf("failed to write hidden.go: %v", err)
-	}
-
-	// Create a root-level .go file
-	rootFile := filepath.Join(tmpDir, "root.go")
-	if err := os.WriteFile(rootFile, []byte("package main\n"), 0644); err != nil {
-		t.Fatalf("failed to write root.go: %v", err)
-	}
+	writeGoFile(t, filepath.Join(tmpDir, "normal/normal.go"), "package main\n")
+	writeGoFile(t, filepath.Join(tmpDir, "vendor/vendor.go"), "package main\n")
+	writeGoFile(t, filepath.Join(tmpDir, ".hidden/hidden.go"), "package main\n")
+	writeGoFile(t, filepath.Join(tmpDir, "root.go"), "package main\n")
 
 	// Call Collect
 	files, excluded, skipped := Collect([]string{tmpDir}, nil)

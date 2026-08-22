@@ -2,11 +2,33 @@ package funclen_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"go-gardener/internal/funclen"
 )
+
+// writeFile writes content to path, failing the test on error.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile %s failed: %v", path, err)
+	}
+}
+
+// funcSrc generates Go source for "package main" with a single function named
+// funcName containing fillerLines statement lines (plus any preamble lines,
+// e.g. a comment directive, placed before the func declaration).
+func funcSrc(funcName string, fillerLines int, preamble ...string) string {
+	lines := append([]string{"package main", ""}, preamble...)
+	lines = append(lines, "func "+funcName+"() {")
+	for i := 0; i < fillerLines; i++ {
+		lines = append(lines, "\tx := 1")
+	}
+	lines = append(lines, "}")
+	return strings.Join(lines, "\n")
+}
 
 func TestCheck_NoViolationUnderLimit(t *testing.T) {
 	// Write a small 5-line function to a temp file
@@ -33,35 +55,13 @@ func Foo() {
 }
 
 func TestCheck_ReportsViolationOverLimit(t *testing.T) {
-	// Create a function with exactly 105 lines from { to }
-	// func LongFunc() { (line 3 counting from 1)
-	// x := 1  x 103 (lines 4-106, but we'll have fewer lines of filler)
-	// }  (closing brace)
-	// We want: endLine - startLine + 1 = 105, so if startLine is 3, endLine should be 107
-	// That means: 107 - 3 + 1 = 105
-	// So we need: line 3 is {, lines 4-106 are filler (103 lines), line 107 is }
-	lines := []string{"package main", "", "func LongFunc() {"}
-
-	// Add 103 lines of filler so that function spans from line 3 ({ ) to line 107 (})
-	// which gives 107 - 3 + 1 = 105 lines
-	for i := 0; i < 103; i++ {
-		lines = append(lines, "\tx := 1")
-	}
-	lines = append(lines, "}")
-
-	src := strings.Join(lines, "\n")
-
-	// Verify the line count: we should have 3 (boilerplate) + 103 (filler) + 1 (closing) = 107 lines total
-	numLines := strings.Count(src, "\n") + 1
-	if numLines != 107 {
-		t.Fatalf("fixture has %d lines, expected 107; src:\n%s", numLines, src)
-	}
+	// funcSrc("LongFunc", 103) spans from the { line to the } line for
+	// endLine - startLine + 1 = 105 lines, i.e. a violation of the 100-line limit.
+	src := funcSrc("LongFunc", 103)
 
 	tmpDir := t.TempDir()
 	tmpFile := tmpDir + "/long.go"
-	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
+	writeFile(t, tmpFile, src)
 
 	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
 	if err != nil {
@@ -88,25 +88,10 @@ func TestCheck_ReportsViolationOverLimit(t *testing.T) {
 }
 
 func TestCheck_ExactlyAtLimitIsCompliant(t *testing.T) {
-	// Create a function with exactly 100 lines (the limit) — should not be a violation
-	// func Exactly100() { (line 3)
-	// x := 1 x 98 (lines 4-101)
-	// } (line 102)
-	// Span: 102 - 3 + 1 = 100 lines
-	lines := []string{"package main", "", "func Exactly100() {"}
-
-	for i := 0; i < 98; i++ {
-		lines = append(lines, "\tx := 1")
-	}
-	lines = append(lines, "}")
-
-	src := strings.Join(lines, "\n")
-
+	// funcSrc("Exactly100", 98) spans exactly 100 lines from { to }, the limit itself.
 	tmpDir := t.TempDir()
 	tmpFile := tmpDir + "/exact.go"
-	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
+	writeFile(t, tmpFile, funcSrc("Exactly100", 98))
 
 	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
 	if err != nil {
@@ -119,67 +104,28 @@ func TestCheck_ExactlyAtLimitIsCompliant(t *testing.T) {
 }
 
 func TestCheck_WalksDirectoryRecursivelySkippingVendorAndDotDirs(t *testing.T) {
-	// Build a temp dir tree with violations, vendor/, and .hidden/
+	// Build a temp dir tree with violations under normal dirs, and would-be
+	// violations under vendor/ and a dot-dir that should be skipped.
 	tmpDir := t.TempDir()
 
-	// pkg/a.go - violation (105 lines)
-	aLines := []string{"package main", "", "func ViolatingA() {"}
-	for i := 0; i < 103; i++ {
-		aLines = append(aLines, "\tx := 1")
-	}
-	aLines = append(aLines, "}")
-	aSrc := strings.Join(aLines, "\n")
-
-	if err := os.MkdirAll(tmpDir+"/pkg", 0755); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	if err := os.WriteFile(tmpDir+"/pkg/a.go", []byte(aSrc), 0644); err != nil {
-		t.Fatalf("WriteFile a.go failed: %v", err)
+	fixtures := []struct {
+		dir     string
+		file    string
+		fn      string
+		skipped bool
+	}{
+		{"pkg", "a.go", "ViolatingA", false},
+		{"pkg/sub", "b.go", "ViolatingB", false},
+		{"vendor/dep", "c.go", "ViolatingC", true},
+		{".git", "d.go", "ViolatingD", true},
 	}
 
-	// pkg/sub/b.go - violation (105 lines)
-	bLines := []string{"package main", "", "func ViolatingB() {"}
-	for i := 0; i < 103; i++ {
-		bLines = append(bLines, "\tx := 1")
-	}
-	bLines = append(bLines, "}")
-	bSrc := strings.Join(bLines, "\n")
-
-	if err := os.MkdirAll(tmpDir+"/pkg/sub", 0755); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	if err := os.WriteFile(tmpDir+"/pkg/sub/b.go", []byte(bSrc), 0644); err != nil {
-		t.Fatalf("WriteFile b.go failed: %v", err)
-	}
-
-	// vendor/dep/c.go - would be violation but in vendor/ so skipped
-	cLines := []string{"package main", "", "func ViolatingC() {"}
-	for i := 0; i < 103; i++ {
-		cLines = append(cLines, "\tx := 1")
-	}
-	cLines = append(cLines, "}")
-	cSrc := strings.Join(cLines, "\n")
-
-	if err := os.MkdirAll(tmpDir+"/vendor/dep", 0755); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	if err := os.WriteFile(tmpDir+"/vendor/dep/c.go", []byte(cSrc), 0644); err != nil {
-		t.Fatalf("WriteFile c.go failed: %v", err)
-	}
-
-	// .git/d.go - would be violation but in dot-dir so skipped
-	dLines := []string{"package main", "", "func ViolatingD() {"}
-	for i := 0; i < 103; i++ {
-		dLines = append(dLines, "\tx := 1")
-	}
-	dLines = append(dLines, "}")
-	dSrc := strings.Join(dLines, "\n")
-
-	if err := os.MkdirAll(tmpDir+"/.git", 0755); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	if err := os.WriteFile(tmpDir+"/.git/d.go", []byte(dSrc), 0644); err != nil {
-		t.Fatalf("WriteFile d.go failed: %v", err)
+	for _, fx := range fixtures {
+		dir := filepath.Join(tmpDir, fx.dir)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("MkdirAll failed: %v", err)
+		}
+		writeFile(t, filepath.Join(dir, fx.file), funcSrc(fx.fn, 103))
 	}
 
 	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{})
@@ -191,23 +137,15 @@ func TestCheck_WalksDirectoryRecursivelySkippingVendorAndDotDirs(t *testing.T) {
 		t.Fatalf("expected 2 violations, got %d", len(report.Violations))
 	}
 
-	// Check that we got violations from a.go and b.go, not from vendor or .git
 	funcs := make(map[string]bool)
 	for _, v := range report.Violations {
 		funcs[v.Func] = true
 	}
 
-	if !funcs["ViolatingA"] {
-		t.Errorf("expected violation from ViolatingA")
-	}
-	if !funcs["ViolatingB"] {
-		t.Errorf("expected violation from ViolatingB")
-	}
-	if funcs["ViolatingC"] {
-		t.Errorf("unexpected violation from ViolatingC (should be in vendor/)")
-	}
-	if funcs["ViolatingD"] {
-		t.Errorf("unexpected violation from ViolatingD (should be in .git/)")
+	for _, fx := range fixtures {
+		if funcs[fx.fn] == fx.skipped {
+			t.Errorf("violation presence for %s: got %v, want %v", fx.fn, funcs[fx.fn], !fx.skipped)
+		}
 	}
 }
 
@@ -276,27 +214,8 @@ func TestCheck_ExcludeFileSkipsFileAndReportsWhenDebug(t *testing.T) {
 	// Create foo.go with a violation and foo_test.go with a violation
 	tmpDir := t.TempDir()
 
-	fooLines := []string{"package main", "", "func Foo() {"}
-	for i := 0; i < 103; i++ {
-		fooLines = append(fooLines, "\tx := 1")
-	}
-	fooLines = append(fooLines, "}")
-	fooSrc := strings.Join(fooLines, "\n")
-
-	if err := os.WriteFile(tmpDir+"/foo.go", []byte(fooSrc), 0644); err != nil {
-		t.Fatalf("WriteFile foo.go failed: %v", err)
-	}
-
-	testLines := []string{"package main", "", "func TestFoo() {"}
-	for i := 0; i < 103; i++ {
-		testLines = append(testLines, "\tx := 1")
-	}
-	testLines = append(testLines, "}")
-	testSrc := strings.Join(testLines, "\n")
-
-	if err := os.WriteFile(tmpDir+"/foo_test.go", []byte(testSrc), 0644); err != nil {
-		t.Fatalf("WriteFile foo_test.go failed: %v", err)
-	}
+	writeFile(t, tmpDir+"/foo.go", funcSrc("Foo", 103))
+	writeFile(t, tmpDir+"/foo_test.go", funcSrc("TestFoo", 103))
 
 	// With debug on, excluded files should appear
 	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
@@ -323,27 +242,8 @@ func TestCheck_ExcludedItemsHiddenUnlessDebug(t *testing.T) {
 	// Create foo.go with a violation
 	tmpDir := t.TempDir()
 
-	fooLines := []string{"package main", "", "func Foo() {"}
-	for i := 0; i < 103; i++ {
-		fooLines = append(fooLines, "\tx := 1")
-	}
-	fooLines = append(fooLines, "}")
-	fooSrc := strings.Join(fooLines, "\n")
-
-	if err := os.WriteFile(tmpDir+"/foo.go", []byte(fooSrc), 0644); err != nil {
-		t.Fatalf("WriteFile foo.go failed: %v", err)
-	}
-
-	testLines := []string{"package main", "", "func TestFoo() {"}
-	for i := 0; i < 103; i++ {
-		testLines = append(testLines, "\tx := 1")
-	}
-	testLines = append(testLines, "}")
-	testSrc := strings.Join(testLines, "\n")
-
-	if err := os.WriteFile(tmpDir+"/foo_test.go", []byte(testSrc), 0644); err != nil {
-		t.Fatalf("WriteFile foo_test.go failed: %v", err)
-	}
+	writeFile(t, tmpDir+"/foo.go", funcSrc("Foo", 103))
+	writeFile(t, tmpDir+"/foo_test.go", funcSrc("TestFoo", 103))
 
 	// With debug off, excluded files should NOT appear
 	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
@@ -414,17 +314,7 @@ func TestRealFunc() {
 func TestCheck_ExcludeFuncByCommentDirective(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	lines := []string{"package main", "", "// gardener:ignore", "func Foo() {"}
-	// Make it 105 lines
-	for i := 0; i < 103; i++ {
-		lines = append(lines, "\tx := 1")
-	}
-	lines = append(lines, "}")
-	src := strings.Join(lines, "\n")
-
-	if err := os.WriteFile(tmpDir+"/test.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore"))
 
 	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
 		Debug: true,
@@ -453,17 +343,7 @@ func TestCheck_CommentDirectiveTypoIsNotExcluded(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Typo: missing colon
-	lines := []string{"package main", "", "// gardenerignore", "func Foo() {"}
-	// Make it 105 lines
-	for i := 0; i < 103; i++ {
-		lines = append(lines, "\tx := 1")
-	}
-	lines = append(lines, "}")
-	src := strings.Join(lines, "\n")
-
-	if err := os.WriteFile(tmpDir+"/test.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardenerignore"))
 
 	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
 		Debug: true,

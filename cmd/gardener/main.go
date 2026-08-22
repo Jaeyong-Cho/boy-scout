@@ -11,6 +11,7 @@ import (
 
 	"go-gardener/internal/crap"
 	"go-gardener/internal/funclen"
+	"go-gardener/internal/setup"
 )
 
 func assertf(cond bool, format string, args ...any) {
@@ -47,26 +48,60 @@ func validatePatterns(patterns []string) error {
 	return nil
 }
 
+// resolveArgs parses fs, defaults paths to "." when none are given, and parses/validates
+// the --exclude-file/--exclude-func flag values, collapsing the usual four-step
+// dance (parse, default paths, parse excludes, validate excludes) into one error check.
+func resolveArgs(fs *flag.FlagSet, args []string, excludeFile, excludeFunc *string) (paths, excludeFiles, excludeFuncs []string, err error) {
+	if err := fs.Parse(args); err != nil {
+		return nil, nil, nil, fmt.Errorf("parse error: %w", err)
+	}
+
+	paths = fs.Args()
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+
+	excludeFiles, excludeFuncs, err = excludePatternsFrom(*excludeFile, *excludeFunc)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return paths, excludeFiles, excludeFuncs, nil
+}
+
+// excludePatternsFrom parses and validates the --exclude-file/--exclude-func flag values.
+func excludePatternsFrom(excludeFile, excludeFunc string) (excludeFiles, excludeFuncs []string, err error) {
+	excludeFiles = parsePatterns(excludeFile)
+	excludeFuncs = parsePatterns(excludeFunc)
+	if err := validatePatterns(excludeFiles); err != nil {
+		return nil, nil, err
+	}
+	if err := validatePatterns(excludeFuncs); err != nil {
+		return nil, nil, err
+	}
+	return excludeFiles, excludeFuncs, nil
+}
+
+// subcommands maps each subcommand name to its handler.
+var subcommands = map[string]func(args []string, stdout, stderr io.Writer) int{
+	"funclen": runFunclen,
+	"crap":    runCrap,
+	"all":     runAll,
+	"setup":   runSetup,
+}
+
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: gardener <subcommand> [options] [paths...]")
-		fmt.Fprintln(stderr, "subcommands: funclen, crap, all")
+		fmt.Fprintln(stderr, "subcommands: funclen, crap, all, setup")
 		return 2
 	}
 
-	subcommand := args[0]
-
-	switch subcommand {
-	case "funclen":
-		return runFunclen(args[1:], stdout, stderr)
-	case "crap":
-		return runCrap(args[1:], stdout, stderr)
-	case "all":
-		return runAll(args[1:], stdout, stderr)
-	default:
-		fmt.Fprintf(stderr, "unknown subcommand: %s\n", subcommand)
+	fn, ok := subcommands[args[0]]
+	if !ok {
+		fmt.Fprintf(stderr, "unknown subcommand: %s\n", args[0])
 		return 2
 	}
+	return fn(args[1:], stdout, stderr)
 }
 
 func runFunclen(args []string, stdout, stderr io.Writer) int {
@@ -77,24 +112,8 @@ func runFunclen(args []string, stdout, stderr io.Writer) int {
 	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
 	debug := fs.Bool("debug", false, "include excluded files and functions in output")
 
-	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(stderr, "parse error: %v\n", err)
-		return 2
-	}
-
-	paths := fs.Args()
-	if len(paths) == 0 {
-		paths = []string{"."}
-	}
-
-	// Parse and validate patterns
-	excludeFiles := parsePatterns(*excludeFile)
-	excludeFuncs := parsePatterns(*excludeFunc)
-	if err := validatePatterns(excludeFiles); err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 2
-	}
-	if err := validatePatterns(excludeFuncs); err != nil {
+	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
@@ -111,12 +130,10 @@ func runFunclen(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	// Render output
 	if *format == "json" {
 		return renderJSON(report, stdout, stderr)
-	} else {
-		return renderText(report, stdout, stderr)
 	}
+	return renderText(report, stdout, stderr)
 }
 
 func runCrap(args []string, stdout, stderr io.Writer) int {
@@ -127,24 +144,8 @@ func runCrap(args []string, stdout, stderr io.Writer) int {
 	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
 	debug := fs.Bool("debug", false, "include excluded files and functions in output")
 
-	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(stderr, "parse error: %v\n", err)
-		return 2
-	}
-
-	paths := fs.Args()
-	if len(paths) == 0 {
-		paths = []string{"."}
-	}
-
-	// Parse and validate patterns
-	excludeFiles := parsePatterns(*excludeFile)
-	excludeFuncs := parsePatterns(*excludeFunc)
-	if err := validatePatterns(excludeFiles); err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 2
-	}
-	if err := validatePatterns(excludeFuncs); err != nil {
+	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
@@ -161,31 +162,30 @@ func runCrap(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	// Render output
 	if *format == "json" {
 		return renderCrapJSON(report, stdout, stderr)
-	} else {
-		return renderCrapText(report, stdout, stderr)
+	}
+	return renderCrapText(report, stdout, stderr)
+}
+
+// writeCrapLines writes a crap report's violations and excluded entries to w,
+// each line prefixed with prefix (e.g. "[crap] " when combined with other checks).
+func writeCrapLines(w io.Writer, prefix string, report crap.Report) {
+	for _, v := range report.Violations {
+		fmt.Fprintf(w, "%s%s:%d: function %s has CRAP score %.2f (complexity=%d, coverage=%.1f%%, threshold=%.2f)\n",
+			prefix, v.File, v.Line, v.Func, v.Score, v.Complexity, v.Coverage*100, v.Threshold)
+	}
+	for _, f := range report.ExcludedFiles {
+		fmt.Fprintf(w, "%sexcluded file: %s\n", prefix, f)
+	}
+	for _, exc := range report.ExcludedFuncs {
+		fmt.Fprintf(w, "%s%s:%d: function %s excluded (%s)\n",
+			prefix, exc.File, exc.Line, exc.Func, exc.Reason)
 	}
 }
 
 func renderCrapText(report crap.Report, stdout, stderr io.Writer) int {
-	for _, v := range report.Violations {
-		fmt.Fprintf(stdout, "%s:%d: function %s has CRAP score %.2f (complexity=%d, coverage=%.1f%%, threshold=%.2f)\n",
-			v.File, v.Line, v.Func, v.Score, v.Complexity, v.Coverage*100, v.Threshold)
-	}
-
-	// Render excluded files
-	for _, f := range report.ExcludedFiles {
-		fmt.Fprintf(stdout, "excluded file: %s\n", f)
-	}
-
-	// Render excluded functions
-	for _, exc := range report.ExcludedFuncs {
-		fmt.Fprintf(stdout, "%s:%d: function %s excluded (%s)\n",
-			exc.File, exc.Line, exc.Func, exc.Reason)
-	}
-
+	writeCrapLines(stdout, "", report)
 	return exitCodeFor(len(report.Violations), len(report.Skipped))
 }
 
@@ -210,54 +210,18 @@ func runAll(args []string, stdout, stderr io.Writer) int {
 	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
 	debug := fs.Bool("debug", false, "include excluded files and functions in output")
 
-	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(stderr, "parse error: %v\n", err)
-		return 2
-	}
-
-	paths := fs.Args()
-	if len(paths) == 0 {
-		paths = []string{"."}
-	}
-
-	// Parse and validate patterns
-	excludeFiles := parsePatterns(*excludeFile)
-	excludeFuncs := parsePatterns(*excludeFunc)
-	if err := validatePatterns(excludeFiles); err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 2
-	}
-	if err := validatePatterns(excludeFuncs); err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 2
-	}
-
-	opts := funclen.Options{
-		ExcludeFiles: excludeFiles,
-		ExcludeFuncs: excludeFuncs,
-		Debug:        *debug,
-	}
-	crapOpts := crap.Options{
-		ExcludeFiles: excludeFiles,
-		ExcludeFuncs: excludeFuncs,
-		Debug:        *debug,
-	}
-
-	// Run funclen check
-	funclenReport, err := funclen.Check(paths, 50, opts)
+	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
 
-	// Run crap check
-	crapReport, err := crap.Check(paths, 6.0, crapOpts)
+	funclenReport, crapReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
 
-	// Combine into a single report
 	combined := combinedReport{
 		Funclen: funclenReport,
 		Crap:    crapReport,
@@ -266,37 +230,39 @@ func runAll(args []string, stdout, stderr io.Writer) int {
 	// Render output
 	if *format == "json" {
 		return renderAllJSON(combined, stdout, stderr)
-	} else {
-		return renderAllText(combined, stdout, stderr)
 	}
+	return renderAllText(combined, stdout, stderr)
+}
+
+// checkAll runs both the funclen and crap checks with shared options.
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (funclen.Report, crap.Report, error) {
+	opts := funclen.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        debug,
+	}
+	crapOpts := crap.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        debug,
+	}
+
+	funclenReport, err := funclen.Check(paths, 50, opts)
+	if err != nil {
+		return funclen.Report{}, crap.Report{}, err
+	}
+
+	crapReport, err := crap.Check(paths, 6.0, crapOpts)
+	if err != nil {
+		return funclen.Report{}, crap.Report{}, err
+	}
+
+	return funclenReport, crapReport, nil
 }
 
 func renderAllText(report combinedReport, stdout, stderr io.Writer) int {
-	// Render funclen violations and excluded
-	for _, v := range report.Funclen.Violations {
-		fmt.Fprintf(stdout, "[funclen] %s:%d: function %s is %d lines (limit %d)\n",
-			v.File, v.Line, v.Func, v.Length, v.Limit)
-	}
-	for _, f := range report.Funclen.ExcludedFiles {
-		fmt.Fprintf(stdout, "[funclen] excluded file: %s\n", f)
-	}
-	for _, exc := range report.Funclen.ExcludedFuncs {
-		fmt.Fprintf(stdout, "[funclen] %s:%d: function %s excluded (%s)\n",
-			exc.File, exc.Line, exc.Func, exc.Reason)
-	}
-
-	// Render crap violations and excluded
-	for _, v := range report.Crap.Violations {
-		fmt.Fprintf(stdout, "[crap] %s:%d: function %s has CRAP score %.2f (complexity=%d, coverage=%.1f%%, threshold=%.2f)\n",
-			v.File, v.Line, v.Func, v.Score, v.Complexity, v.Coverage*100, v.Threshold)
-	}
-	for _, f := range report.Crap.ExcludedFiles {
-		fmt.Fprintf(stdout, "[crap] excluded file: %s\n", f)
-	}
-	for _, exc := range report.Crap.ExcludedFuncs {
-		fmt.Fprintf(stdout, "[crap] %s:%d: function %s excluded (%s)\n",
-			exc.File, exc.Line, exc.Func, exc.Reason)
-	}
+	writeFunclenLines(stdout, "[funclen] ", report.Funclen)
+	writeCrapLines(stdout, "[crap] ", report.Crap)
 
 	totalViolations := len(report.Funclen.Violations) + len(report.Crap.Violations)
 	totalSkipped := len(report.Funclen.Skipped) + len(report.Crap.Skipped)
@@ -316,6 +282,58 @@ func renderAllJSON(report combinedReport, stdout, stderr io.Writer) int {
 	return exitCodeFor(totalViolations, totalSkipped)
 }
 
+// prepareSetupArgs resolves the install base directory (home dir if global, else
+// cwd) and the current executable path needed by setup.Run.
+func prepareSetupArgs(global bool) (baseDir, exePath string, err error) {
+	if global {
+		baseDir, err = os.UserHomeDir()
+	} else {
+		baseDir = "."
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	exePath, err = os.Executable()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	return baseDir, exePath, nil
+}
+
+func runSetup(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	global := fs.Bool("global", false, "install to ~/.agent/skills/gardener instead of ./.agent/skills/gardener")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "parse error: %v\n", err)
+		return 2
+	}
+
+	// Reject extra positional arguments
+	if len(fs.Args()) > 0 {
+		fmt.Fprintln(stderr, "usage: gardener setup [--global]")
+		return 2
+	}
+
+	baseDir, exePath, err := prepareSetupArgs(*global)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+	assertf(baseDir != "", "baseDir must not be empty")
+
+	path, err := setup.Run(baseDir, exePath)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	fmt.Fprintf(stdout, "gardener skill installed: %s\n", path)
+	return 0
+}
+
 // exitCodeFor computes the exit code based on violation and skipped file counts.
 // Skipped/fatal errors take priority (code 2), then violations (code 1), then clean (code 0).
 func exitCodeFor(numViolations, numSkipped int) int {
@@ -330,23 +348,24 @@ func exitCodeFor(numViolations, numSkipped int) int {
 	return code
 }
 
-func renderText(report funclen.Report, stdout, stderr io.Writer) int {
+// writeFunclenLines writes a funclen report's violations and excluded entries to w,
+// each line prefixed with prefix (e.g. "[funclen] " when combined with other checks).
+func writeFunclenLines(w io.Writer, prefix string, report funclen.Report) {
 	for _, v := range report.Violations {
-		fmt.Fprintf(stdout, "%s:%d: function %s is %d lines (limit %d)\n",
-			v.File, v.Line, v.Func, v.Length, v.Limit)
+		fmt.Fprintf(w, "%s%s:%d: function %s is %d lines (limit %d)\n",
+			prefix, v.File, v.Line, v.Func, v.Length, v.Limit)
 	}
-
-	// Render excluded files
 	for _, f := range report.ExcludedFiles {
-		fmt.Fprintf(stdout, "excluded file: %s\n", f)
+		fmt.Fprintf(w, "%sexcluded file: %s\n", prefix, f)
 	}
-
-	// Render excluded functions
 	for _, exc := range report.ExcludedFuncs {
-		fmt.Fprintf(stdout, "%s:%d: function %s excluded (%s)\n",
-			exc.File, exc.Line, exc.Func, exc.Reason)
+		fmt.Fprintf(w, "%s%s:%d: function %s excluded (%s)\n",
+			prefix, exc.File, exc.Line, exc.Func, exc.Reason)
 	}
+}
 
+func renderText(report funclen.Report, stdout, stderr io.Writer) int {
+	writeFunclenLines(stdout, "", report)
 	return exitCodeFor(len(report.Violations), len(report.Skipped))
 }
 

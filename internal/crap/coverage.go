@@ -30,41 +30,15 @@ func parseProfile(r io.Reader) ([]profileBlock, error) {
 		lineNum++
 		line := scanner.Text()
 
-		// Skip the mode line (first line)
-		if lineNum == 1 && strings.HasPrefix(line, "mode:") {
+		if shouldSkipProfileLine(line, lineNum) {
 			continue
 		}
 
-		// Skip empty lines
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-
-		// Parse the block line: file:startLine.startCol,endLine.endCol numStmt count
-		// Example: example.com/pkg/file.go:3.14,5.2 2 1
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("malformed coverage line at line %d: %s", lineNum, line)
-		}
-
-		file := parts[0]
-		rest := parts[1]
-
-		// Parse the range and counts: "3.14,5.2 2 1"
-		var startLine, startCol, endLine, endCol, numStmt, count int
-		_, err := fmt.Sscanf(rest, "%d.%d,%d.%d %d %d",
-			&startLine, &startCol, &endLine, &endCol, &numStmt, &count)
+		block, err := parseProfileLine(line, lineNum)
 		if err != nil {
-			return nil, fmt.Errorf("malformed coverage block at line %d: %s", lineNum, line)
+			return nil, err
 		}
-
-		blocks = append(blocks, profileBlock{
-			file:      file,
-			startLine: startLine,
-			endLine:   endLine,
-			numStmt:   numStmt,
-			count:     count,
-		})
+		blocks = append(blocks, block)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -72,6 +46,42 @@ func parseProfile(r io.Reader) ([]profileBlock, error) {
 	}
 
 	return blocks, nil
+}
+
+// shouldSkipProfileLine reports whether line should be skipped: either the
+// leading "mode: ..." line, or a blank line.
+func shouldSkipProfileLine(line string, lineNum int) bool {
+	if lineNum == 1 && strings.HasPrefix(line, "mode:") {
+		return true
+	}
+	return strings.TrimSpace(line) == ""
+}
+
+// parseProfileLine parses a single coverage block line: file:startLine.startCol,endLine.endCol numStmt count
+// Example: example.com/pkg/file.go:3.14,5.2 2 1
+func parseProfileLine(line string, lineNum int) (profileBlock, error) {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return profileBlock{}, fmt.Errorf("malformed coverage line at line %d: %s", lineNum, line)
+	}
+
+	file := parts[0]
+	rest := parts[1]
+
+	var startLine, startCol, endLine, endCol, numStmt, count int
+	_, err := fmt.Sscanf(rest, "%d.%d,%d.%d %d %d",
+		&startLine, &startCol, &endLine, &endCol, &numStmt, &count)
+	if err != nil {
+		return profileBlock{}, fmt.Errorf("malformed coverage block at line %d: %s", lineNum, line)
+	}
+
+	return profileBlock{
+		file:      file,
+		startLine: startLine,
+		endLine:   endLine,
+		numStmt:   numStmt,
+		count:     count,
+	}, nil
 }
 
 // functionCoverage calculates the fraction of statements executed in a function.
@@ -86,18 +96,7 @@ func functionCoverage(blocks []profileBlock, fileInProfile bool, startLine, endL
 		return 0.0
 	}
 
-	var totalStmt int
-	var coveredStmt int
-
-	for _, block := range blocks {
-		// Check if block overlaps with function range
-		if block.startLine >= startLine && block.endLine <= endLine {
-			totalStmt += block.numStmt
-			if block.count > 0 {
-				coveredStmt += block.numStmt
-			}
-		}
-	}
+	totalStmt, coveredStmt := sumOverlapping(blocks, startLine, endLine)
 
 	// If no statements found, vacuously 100% covered
 	if totalStmt == 0 {
@@ -105,8 +104,25 @@ func functionCoverage(blocks []profileBlock, fileInProfile bool, startLine, endL
 	}
 
 	cov := float64(coveredStmt) / float64(totalStmt)
-	assertf(cov >= 0 && cov <= 1, "coverage fraction out of range: %f", cov)
+	assertCoverageInRange(cov)
 	return cov
+}
+
+// sumOverlapping sums the statement counts of blocks that fall within [startLine, endLine].
+func sumOverlapping(blocks []profileBlock, startLine, endLine int) (totalStmt, coveredStmt int) {
+	for _, block := range blocks {
+		if block.startLine >= startLine && block.endLine <= endLine {
+			totalStmt += block.numStmt
+			if block.count > 0 {
+				coveredStmt += block.numStmt
+			}
+		}
+	}
+	return totalStmt, coveredStmt
+}
+
+func assertCoverageInRange(cov float64) {
+	assertf(cov >= 0 && cov <= 1, "coverage fraction out of range: %f", cov)
 }
 
 // testTargets converts a list of paths to go test package patterns.
@@ -116,28 +132,10 @@ func testTargets(paths []string) []string {
 	targets := make(map[string]struct{})
 
 	for _, path := range paths {
-		stat, err := os.Stat(path)
-		if err != nil {
-			// Skip unreachable paths
-			continue
+		target, ok := testTarget(path)
+		if ok {
+			targets[target] = struct{}{}
 		}
-
-		var dir string
-		if stat.IsDir() {
-			dir = path
-		} else {
-			dir = filepath.Dir(path)
-		}
-
-		// Convert to go test pattern
-		var target string
-		if dir == "." {
-			target = "./..."
-		} else {
-			target = dir + "/..."
-		}
-
-		targets[target] = struct{}{}
 	}
 
 	// Convert map to slice
@@ -146,6 +144,25 @@ func testTargets(paths []string) []string {
 		result = append(result, t)
 	}
 	return result
+}
+
+// testTarget converts a single path to its go test package pattern (e.g. "./..." or
+// "dir/..."). ok is false if the path is unreachable and should be skipped.
+func testTarget(path string) (target string, ok bool) {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return "", false
+	}
+
+	dir := path
+	if !stat.IsDir() {
+		dir = filepath.Dir(path)
+	}
+
+	if dir == "." {
+		return "./...", true
+	}
+	return dir + "/...", true
 }
 
 // runGoTest runs go test -covermode=set -coverprofile for the given paths.

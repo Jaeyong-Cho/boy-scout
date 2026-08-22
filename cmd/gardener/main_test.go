@@ -5,9 +5,44 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// writeGoFile writes content to dir/name and returns the full path.
+func writeGoFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	return path
+}
+
+// longFuncSrc generates Go source for a package with a single function of totalLines lines.
+func longFuncSrc(pkg, funcName string, totalLines int) string {
+	lines := []string{"package " + pkg, "", "func " + funcName + "() {"}
+	for i := 0; i < totalLines-2; i++ {
+		lines = append(lines, "\t_ = 1")
+	}
+	lines = append(lines, "}")
+	return strings.Join(lines, "\n")
+}
+
+// initModule writes a go.mod to dir and chdirs into it for the duration of the test.
+func initModule(t *testing.T, dir string) {
+	t.Helper()
+	writeGoFile(t, dir, "go.mod", "module test\n\ngo 1.24\n")
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(oldCwd) })
+}
 
 func TestRun_TextFormatMatchesExpectedLine(t *testing.T) {
 	// Create a file with a 105-line function
@@ -126,19 +161,8 @@ func TestRun_FunclenDefaultsToCurrentDir(t *testing.T) {
 }
 
 func TestRun_JSONFormatOutputsValidSchema(t *testing.T) {
-	// Create a file with a 105-line function
-	lines := []string{"package main", "", "func Violating() {"}
-	for i := 0; i < 103; i++ {
-		lines = append(lines, "\tx := 1")
-	}
-	lines = append(lines, "}")
-	src := strings.Join(lines, "\n")
-
 	tmpDir := t.TempDir()
-	tmpFile := tmpDir + "/viol.go"
-	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
+	tmpFile := writeGoFile(t, tmpDir, "viol.go", longFuncSrc("main", "Violating", 105))
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	exitCode := run([]string{"funclen", "--format=json", tmpFile}, &stdoutBuf, &stderrBuf)
@@ -197,35 +221,17 @@ func TestRun_ExitCodeReflectsOutcome(t *testing.T) {
 
 			// Create a violating file if needed
 			if tc.hasViolations {
-				lines := []string{"package main", "", "func Big() {"}
-				for i := 0; i < 103; i++ {
-					lines = append(lines, "\tx := 1")
-				}
-				lines = append(lines, "}")
-				src := strings.Join(lines, "\n")
-				if err := os.WriteFile(tmpDir+"/big.go", []byte(src), 0644); err != nil {
-					t.Fatalf("WriteFile failed: %v", err)
-				}
+				writeGoFile(t, tmpDir, "big.go", longFuncSrc("main", "Big", 105))
 			}
 
 			// Create a skipped file if needed
 			if tc.hasSkipped {
-				if err := os.WriteFile(tmpDir+"/bad.go", []byte("invalid syntax {"), 0644); err != nil {
-					t.Fatalf("WriteFile failed: %v", err)
-				}
+				writeGoFile(t, tmpDir, "bad.go", "invalid syntax {")
 			}
 
 			// If no violations and no skipped, create a clean file
 			if !tc.hasViolations && !tc.hasSkipped {
-				src := `package main
-
-func Small() {
-	x := 1
-}
-`
-				if err := os.WriteFile(tmpDir+"/small.go", []byte(src), 0644); err != nil {
-					t.Fatalf("WriteFile failed: %v", err)
-				}
+				writeGoFile(t, tmpDir, "small.go", "package main\n\nfunc Small() {\n\tx := 1\n}\n")
 			}
 
 			var stdoutBuf, stderrBuf bytes.Buffer
@@ -378,6 +384,23 @@ func ComplexFunc(x int) string {
 	}
 }
 
+// crapJSONResult mirrors the JSON schema produced by the crap subcommand's --format=json output.
+type crapJSONResult struct {
+	Violations []struct {
+		File       string  `json:"file"`
+		Line       int     `json:"line"`
+		Func       string  `json:"func"`
+		Complexity int     `json:"complexity"`
+		Coverage   float64 `json:"coverage"`
+		Score      float64 `json:"score"`
+		Threshold  float64 `json:"threshold"`
+	}
+	Skipped []struct {
+		File  string `json:"file"`
+		Error string `json:"error"`
+	}
+}
+
 func TestRun_CrapJSONFormatOutputsValidSchema(t *testing.T) {
 	// Create a file with a complex untested function
 	src := `package main
@@ -392,41 +415,15 @@ func ComplexFunc(x int) string {
 }
 `
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Initialize go module
-	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
+	writeGoFile(t, tmpDir, "main.go", src)
+	initModule(t, tmpDir)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	exitCode := run([]string{"crap", "--threshold=1", "--format=json", "."}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
 
-	// Parse the JSON
-	var result struct {
-		Violations []struct {
-			File       string  `json:"file"`
-			Line       int     `json:"line"`
-			Func       string  `json:"func"`
-			Complexity int     `json:"complexity"`
-			Coverage   float64 `json:"coverage"`
-			Score      float64 `json:"score"`
-			Threshold  float64 `json:"threshold"`
-		}
-		Skipped []struct {
-			File  string `json:"file"`
-			Error string `json:"error"`
-		}
-	}
-
+	var result crapJSONResult
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
 		return
@@ -499,38 +496,7 @@ func ViolatingFunc() {
 	}
 }
 
-func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
-	testCases := []struct {
-		name              string
-		funclenViolating  bool
-		crapViolating     bool
-		expectedExitCode  int
-	}{
-		{"both clean", false, false, 0},
-		{"only funclen violated", true, false, 1},
-		{"only crap violated", false, true, 1},
-		{"both violated", true, true, 1},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-
-			if tc.funclenViolating {
-				// Create a long function (105 lines)
-				src := "package main\nfunc LongFunc() {\n"
-				for i := 0; i < 103; i++ {
-					src += fmt.Sprintf("\t_ = %d\n", i)
-				}
-				src += "}\n"
-				if err := os.WriteFile(tmpDir+"/long.go", []byte(src), 0644); err != nil {
-					t.Fatalf("WriteFile failed: %v", err)
-				}
-			}
-
-			if tc.crapViolating {
-				// Create a complex untested function
-				src := `package main
+const complexFuncSrc = `package main
 func ComplexFunc() {
 	if true {
 		if true {
@@ -543,32 +509,46 @@ func ComplexFunc() {
 	}
 }
 `
-				if err := os.WriteFile(tmpDir+"/complex.go", []byte(src), 0644); err != nil {
-					t.Fatalf("WriteFile failed: %v", err)
-				}
-			}
 
-			if !tc.funclenViolating && !tc.crapViolating {
-				// Create a clean file
-				src := `package main
+const cleanFuncSrc = `package main
 func CleanFunc() {
 	x := 1
 	_ = x
 }
 `
-				if err := os.WriteFile(tmpDir+"/clean.go", []byte(src), 0644); err != nil {
-					t.Fatalf("WriteFile failed: %v", err)
-				}
-			}
 
-			// Initialize go module
-			if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-				t.Fatalf("WriteFile failed: %v", err)
-			}
+// writeAllCheckFixtures writes source files into dir that produce the requested
+// combination of funclen/crap violations for the "all" subcommand.
+func writeAllCheckFixtures(t *testing.T, dir string, funclenViolating, crapViolating bool) {
+	if funclenViolating {
+		writeGoFile(t, dir, "long.go", longFuncSrc("main", "LongFunc", 105))
+	}
+	if crapViolating {
+		writeGoFile(t, dir, "complex.go", complexFuncSrc)
+	}
+	if !funclenViolating && !crapViolating {
+		writeGoFile(t, dir, "clean.go", cleanFuncSrc)
+	}
+}
 
-			oldCwd, _ := os.Getwd()
-			os.Chdir(tmpDir)
-			defer os.Chdir(oldCwd)
+func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
+	testCases := []struct {
+		name             string
+		funclenViolating bool
+		crapViolating    bool
+		expectedExitCode int
+	}{
+		{"both clean", false, false, 0},
+		{"only funclen violated", true, false, 1},
+		{"only crap violated", false, true, 1},
+		{"both violated", true, true, 1},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			writeAllCheckFixtures(t, tmpDir, tc.funclenViolating, tc.crapViolating)
+			initModule(t, tmpDir)
 
 			var stdoutBuf, stderrBuf bytes.Buffer
 			exitCode := run([]string{"all", "."}, &stdoutBuf, &stderrBuf)
@@ -724,5 +704,146 @@ func TestRun_ExcludedViolationsDoNotAffectExitCode(t *testing.T) {
 	// Exit code should be 0 (clean) even though a real violation was excluded
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0 (excluded violation doesn't count), got %d", exitCode)
+	}
+}
+
+func TestRun_SetupLocalWritesRelativeSkillFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	stdout := stdoutBuf.String()
+	if !strings.Contains(stdout, "gardener skill installed:") {
+		t.Errorf("expected 'gardener skill installed:' in stdout, got: %s", stdout)
+	}
+
+	// Verify the skill file exists
+	skillPath := filepath.Join(tmpDir, ".agents", "skills", "gardener", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Fatalf("skill file not found at %q: %v", skillPath, err)
+	}
+
+	// Verify the binary was copied
+	binPath := filepath.Join(tmpDir, ".agents", "bin", "gardener")
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("binary not found at %q: %v", binPath, err)
+	}
+}
+
+func TestRun_SetupGlobalWritesToHomeDir(t *testing.T) {
+	// Create a temporary "home" directory
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "--global"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	// Verify the skill file exists in the home directory
+	skillPath := filepath.Join(homeDir, ".agents", "skills", "gardener", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Fatalf("skill file not found at %q: %v", skillPath, err)
+	}
+
+	// Verify the binary was copied
+	binPath := filepath.Join(homeDir, ".agents", "bin", "gardener")
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("binary not found at %q: %v", binPath, err)
+	}
+
+	stdout := stdoutBuf.String()
+	if !strings.Contains(stdout, homeDir) {
+		t.Errorf("expected home dir %q in stdout, got: %s", homeDir, stdout)
+	}
+}
+
+func TestRun_SetupRejectsExtraArgs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "extra-arg"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2 for usage error, got %d", exitCode)
+	}
+
+	stderr := stderrBuf.String()
+	if !strings.Contains(stderr, "usage") {
+		t.Errorf("expected usage message in stderr, got: %s", stderr)
+	}
+
+	// Verify no .agents directory was created
+	agentDir := filepath.Join(tmpDir, ".agents")
+	if _, err := os.Stat(agentDir); err == nil {
+		t.Errorf("expected .agent directory not to be created for invalid args")
+	}
+}
+
+func TestRun_SetupWriteFailureExitsTwo(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file at the .agents path to block directory creation
+	blockingFile := filepath.Join(tmpDir, ".agents")
+	if err := os.WriteFile(blockingFile, []byte("blocking"), 0644); err != nil {
+		t.Fatalf("failed to create blocking file: %v", err)
+	}
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2 for write failure, got %d", exitCode)
+	}
+
+	stderr := stderrBuf.String()
+	if !strings.Contains(stderr, "error:") {
+		t.Errorf("expected error message in stderr, got: %s", stderr)
 	}
 }
