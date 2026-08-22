@@ -1,16 +1,16 @@
 .PHONY: build test vet clean install help
 
-BINARY := bin/gardener-go
-MAIN_PKG := ./cmd/gardener-go
+BINARY := bin/gardener
+MAIN_PKG := ./cmd/gardener
 
 help:
-	@echo "gardener-go Makefile targets:"
-	@echo "  make build      Build the gardener-go binary to ./bin/gardener-go"
+	@echo "gardener Makefile targets:"
+	@echo "  make build      Build the gardener binary to ./bin/gardener"
 	@echo "  make test       Run all tests"
 	@echo "  make vet        Run go vet"
 	@echo "  make check      Run vet + test (full pre-commit check)"
 	@echo "  make clean      Remove built binaries"
-	@echo "  make install    Build and install to ~/.agents/bin/gardener-go"
+	@echo "  make install    Build and install to ~/.agents/bin/gardener"
 	@echo "  make help       Show this help"
 
 build:
@@ -34,5 +34,5 @@ clean:
 
 install: build
 	mkdir -p ~/.agents/bin
-	cp $(BINARY) ~/.agents/bin/gardener-go
-	@echo "✅ Installed to ~/.agents/bin/gardener-go"
+	cp $(BINARY) ~/.agents/bin/gardener
+	@echo "✅ Installed to ~/.agents/bin/gardener"
