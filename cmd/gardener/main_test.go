@@ -1445,3 +1445,265 @@ func TestRun_SetupGlobalFlagComposesInEitherOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_FilelenRespectsMaxLinesFlag(t *testing.T) {
+	// Create a file with 60 lines
+	lines := []string{"package main"}
+	for i := 0; i < 59; i++ {
+		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+	}
+	src := strings.Join(lines, "\n")
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "toolong.go")
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "filelen", "--max-lines=50", tmpFile}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Should report violation with limit=50, not 300
+	if !strings.Contains(output, "60 lines (limit 50)") {
+		t.Errorf("expected output to contain '60 lines (limit 50)', got:\n%s", output)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_FilelenTextFormatMatchesExpectedLine(t *testing.T) {
+	// Create a file with 350 lines (over default limit of 300)
+	lines := []string{"package main"}
+	for i := 0; i < 349; i++ {
+		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+	}
+	src := strings.Join(lines, "\n")
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "big.go")
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "filelen", tmpFile}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Should contain the file path followed by line count and limit
+	if !strings.Contains(output, tmpFile+": 350 lines (limit 300)") {
+		t.Errorf("expected output to contain '%s: 350 lines (limit 300)', got:\n%s", tmpFile, output)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (has violations), got %d", exitCode)
+	}
+}
+
+func TestRun_FilelenJSONFormatOutputsValidSchema(t *testing.T) {
+	// Create a file with 350 lines
+	lines := []string{"package main"}
+	for i := 0; i < 349; i++ {
+		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+	}
+	src := strings.Join(lines, "\n")
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "big.go")
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "filelen", "--format=json", tmpFile}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	var report map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, output)
+	}
+
+	// Check that the JSON has the expected structure
+	if _, ok := report["Violations"]; !ok {
+		t.Errorf("expected 'Violations' key in JSON output, got keys: %v", reflect.ValueOf(report).MapKeys())
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_CppFilelenOnlyScansCppExtensions(t *testing.T) {
+	// Create both a .go and a .cpp file
+	tmpDir := t.TempDir()
+
+	// Create a .go file with 350 lines (should be ignored for cpp filelen)
+	goLines := []string{"package main"}
+	for i := 0; i < 349; i++ {
+		goLines = append(goLines, "// line "+fmt.Sprintf("%d", i+1))
+	}
+	goFile := filepath.Join(tmpDir, "big.go")
+	if err := os.WriteFile(goFile, []byte(strings.Join(goLines, "\n")), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a .cpp file with 350 lines (should be reported for cpp filelen)
+	cppLines := []string{"#include <iostream>"}
+	for i := 0; i < 349; i++ {
+		cppLines = append(cppLines, "// line "+fmt.Sprintf("%d", i+1))
+	}
+	cppFile := filepath.Join(tmpDir, "big.cpp")
+	if err := os.WriteFile(cppFile, []byte(strings.Join(cppLines, "\n")), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"cpp", "filelen", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Should report the .cpp file, not the .go file
+	if !strings.Contains(output, "big.cpp: 350 lines (limit 300)") {
+		t.Errorf("expected output to contain 'big.cpp: 350 lines (limit 300)', got:\n%s", output)
+	}
+	if strings.Contains(output, "big.go") {
+		t.Errorf("expected output to NOT contain 'big.go' (cpp filelen should ignore .go files), got:\n%s", output)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_AllIncludesFilelen(t *testing.T) {
+	// Create a file that violates both gofunclen and filelen
+	tmpDir := t.TempDir()
+
+	// Create a file with a 60-line function and 350 total lines
+	lines := []string{"package main", "", "func Big() {"}
+	for i := 0; i < 347; i++ {
+		lines = append(lines, "\t_ = "+fmt.Sprintf("%d", i))
+	}
+	lines = append(lines, "\t_ = 0") // use a blank identifier to avoid unused variable error
+	lines = append(lines, "}")
+	src := strings.Join(lines, "\n")
+
+	srcFile := filepath.Join(tmpDir, "big.go")
+	if err := os.WriteFile(srcFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a go.mod file
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "all", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Should include [filelen] output alongside [gofunclen] and [crap]
+	if !strings.Contains(output, "[filelen]") {
+		t.Errorf("expected output to contain '[filelen]', got:\n%s", output)
+	}
+	if !strings.Contains(output, "[gofunclen]") {
+		t.Errorf("expected output to contain '[gofunclen]', got:\n%s", output)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (has violations), got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+}
+
+func TestRun_AllIncludesFilelenJSON(t *testing.T) {
+	// Create a file with 350 lines
+	tmpDir := t.TempDir()
+
+	lines := []string{"package main"}
+	for i := 0; i < 349; i++ {
+		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+	}
+	src := strings.Join(lines, "\n")
+
+	srcFile := filepath.Join(tmpDir, "big.go")
+	if err := os.WriteFile(srcFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a go.mod file
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	var report map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, output)
+	}
+
+	// Check that the JSON has filelen key
+	if _, ok := report["filelen"]; !ok {
+		t.Errorf("expected 'filelen' key in JSON output, got keys: %v", reflect.ValueOf(report).MapKeys())
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (has violations), got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+}
+
+func TestRun_FilelenExitCodeReflectsOutcome(t *testing.T) {
+	testCases := []struct {
+		name         string
+		content      string
+		maxLines     int
+		expectedCode int
+	}{
+		{
+			name:         "clean file",
+			content:      "package main\n// small",
+			maxLines:     300,
+			expectedCode: 0,
+		},
+		{
+			name:         "file with violations",
+			content:      "package main\n" + strings.Repeat("// line\n", 301),
+			maxLines:     300,
+			expectedCode: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			srcFile := filepath.Join(tmpDir, "test.go")
+			if err := os.WriteFile(srcFile, []byte(tc.content), 0644); err != nil {
+				t.Fatalf("WriteFile failed: %v", err)
+			}
+
+			var stdoutBuf, stderrBuf bytes.Buffer
+			exitCode := run([]string{"go", "filelen", "--max-lines=" + fmt.Sprintf("%d", tc.maxLines), srcFile}, &stdoutBuf, &stderrBuf)
+
+			if exitCode != tc.expectedCode {
+				t.Errorf("expected exit code %d, got %d (output: %s)", tc.expectedCode, exitCode, stdoutBuf.String())
+			}
+		})
+	}
+}

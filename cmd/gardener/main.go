@@ -13,6 +13,7 @@ import (
 
 	"gardener-go/internal/cppfunclen"
 	"gardener-go/internal/crap"
+	"gardener-go/internal/filelen"
 	"gardener-go/internal/gofunclen"
 	"gardener-go/internal/setup"
 )
@@ -219,11 +220,13 @@ func excludePatternsFrom(excludeFile, excludeFunc string) (excludeFiles, exclude
 var langSubcommands = map[string]map[string]func(args []string, stdout, stderr io.Writer) int{
 	"go": {
 		"gofunclen": runGoFunclen,
-		"crap":    runGoCrap,
-		"all":     runGoAll,
+		"filelen":   runGoFilelen,
+		"crap":      runGoCrap,
+		"all":       runGoAll,
 	},
 	"cpp": {
 		"funclen": runCppFunclen,
+		"filelen": runCppFilelen,
 	},
 }
 
@@ -332,6 +335,68 @@ func runGoCrap(args []string, stdout, stderr io.Writer) int {
 	return renderCrapText(report, stdout, stderr)
 }
 
+func runGoFilelen(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("filelen", flag.ContinueOnError)
+	maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "unused (filelen has no function-level concept)")
+	debug := fs.Bool("debug", false, "include excluded files in output")
+
+	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	opts := filelen.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        *debug,
+	}
+
+	report, err := filelen.Check(paths, *maxLines, []string{".go"}, opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	if *format == "json" {
+		return renderFilelenJSON(report, stdout, stderr)
+	}
+	return renderFilelenText(report, stdout, stderr)
+}
+
+func runCppFilelen(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("filelen", flag.ContinueOnError)
+	maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "unused (filelen has no function-level concept)")
+	debug := fs.Bool("debug", false, "include excluded files in output")
+
+	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	opts := filelen.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        *debug,
+	}
+
+	report, err := filelen.Check(paths, *maxLines, []string{".cpp", ".h", ".hpp"}, opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	if *format == "json" {
+		return renderFilelenJSON(report, stdout, stderr)
+	}
+	return renderFilelenText(report, stdout, stderr)
+}
+
 func runCppFunclen(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("funclen", flag.ContinueOnError)
 	maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
@@ -394,9 +459,36 @@ func renderCrapJSON(report crap.Report, stdout, stderr io.Writer) int {
 	return exitCodeFor(len(report.Violations), len(report.Skipped))
 }
 
+// writeFilelenLines writes a filelen report's violations and excluded files to w,
+// each line prefixed with prefix (e.g. "[filelen] " when combined with other checks).
+func writeFilelenLines(w io.Writer, prefix string, report filelen.Report) {
+	for _, v := range report.Violations {
+		fmt.Fprintf(w, "%s%s: %d lines (limit %d)\n",
+			prefix, v.File, v.Lines, v.Limit)
+	}
+	for _, f := range report.ExcludedFiles {
+		fmt.Fprintf(w, "%sexcluded file: %s\n", prefix, f)
+	}
+}
+
+func renderFilelenText(report filelen.Report, stdout, stderr io.Writer) int {
+	writeFilelenLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderFilelenJSON(report filelen.Report, stdout, stderr io.Writer) int {
+	data, err := json.Marshal(report)
+	assertf(err == nil, "json.Marshal failed: %v", err)
+
+	fmt.Fprintf(stdout, "%s\n", string(data))
+
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
 type combinedReport struct {
 	Gofunclen gofunclen.Report `json:"gofunclen"`
 	Crap      crap.Report      `json:"crap"`
+	Filelen   filelen.Report   `json:"filelen"`
 }
 
 func runGoAll(args []string, stdout, stderr io.Writer) int {
@@ -412,7 +504,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	gofunclenReport, crapReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	gofunclenReport, crapReport, filelenReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
@@ -421,6 +513,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	combined := combinedReport{
 		Gofunclen: gofunclenReport,
 		Crap:      crapReport,
+		Filelen:   filelenReport,
 	}
 
 	// Render output
@@ -430,8 +523,8 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	return renderAllText(combined, stdout, stderr)
 }
 
-// checkAll runs both the gofunclen and crap checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, error) {
+// checkAll runs the gofunclen, crap, and filelen checks with shared options.
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, error) {
 	opts := gofunclen.Options{
 		ExcludeFiles: excludeFiles,
 		ExcludeFuncs: excludeFuncs,
@@ -442,26 +535,36 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 		ExcludeFuncs: excludeFuncs,
 		Debug:        debug,
 	}
+	filelenOpts := filelen.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
 
 	gofunclenReport, err := gofunclen.Check(paths, 50, opts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, err
 	}
 
 	crapReport, err := crap.Check(paths, 6.0, crapOpts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, err
 	}
 
-	return gofunclenReport, crapReport, nil
+	filelenReport, err := filelen.Check(paths, 300, []string{".go"}, filelenOpts)
+	if err != nil {
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, err
+	}
+
+	return gofunclenReport, crapReport, filelenReport, nil
 }
 
 func renderAllText(report combinedReport, stdout, stderr io.Writer) int {
 	writeGofunclenLines(stdout, "[gofunclen] ", report.Gofunclen)
 	writeCrapLines(stdout, "[crap] ", report.Crap)
+	writeFilelenLines(stdout, "[filelen] ", report.Filelen)
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -472,8 +575,8 @@ func renderAllJSON(report combinedReport, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "%s\n", string(data))
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }

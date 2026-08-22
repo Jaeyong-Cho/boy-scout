@@ -11,6 +11,7 @@ The first check implemented is func-length-limit, which flags functions exceedin
 
 ## Stories
 - [func-length-limit](./func-length-limit.md)
+- [file-length-limit](./file-length-limit.md)
 - [crap-score](./crap-score.md)
 - [crap-ignores-test-files](./crap-ignores-test-files.md)
 - [exclude-files-and-functions](./exclude-files-and-functions.md)
