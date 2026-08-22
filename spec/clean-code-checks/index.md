@@ -13,3 +13,4 @@ The first check implemented is func-length-limit, which flags functions exceedin
 - [func-length-limit](./func-length-limit.md)
 - [crap-score](./crap-score.md)
 - [exclude-files-and-functions](./exclude-files-and-functions.md)
+- [selective-checker-ignore](./selective-checker-ignore.md)

@@ -324,3 +324,64 @@ func TestDummy(t *testing.T) {}
 		t.Errorf("expected reason=comment, got %q", report.ExcludedFuncs[0].Reason)
 	}
 }
+
+func TestCheck_ExcludeFuncByCommentDirective_NamesThisChecker(t *testing.T) {
+	writeFixtureModule(t)
+
+	writeFile(t, "main.go", `package main
+
+// gardener:ignore:crap
+func ComplexFunc() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestDummy(t *testing.T) {}
+`)
+
+	report, err := Check([]string{"."}, 6.0, Options{Debug: true})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("expected 0 violations with crap-specific comment directive, got %d", len(report.Violations))
+	}
+	if len(report.ExcludedFuncs) != 1 {
+		t.Fatalf("expected 1 excluded func, got %d", len(report.ExcludedFuncs))
+	}
+	if report.ExcludedFuncs[0].Reason != "comment" {
+		t.Errorf("expected reason=comment, got %q", report.ExcludedFuncs[0].Reason)
+	}
+}
+
+func TestCheck_ExcludeFuncByCommentDirective_NamesOtherCheckerOnly(t *testing.T) {
+	writeFixtureModule(t)
+
+	writeFile(t, "main.go", `package main
+
+// gardener:ignore:funclen
+func ComplexFunc() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`)
+	writeFile(t, "main_test.go", `package main
+import "testing"
+func TestDummy(t *testing.T) {}
+`)
+
+	report, err := Check([]string{"."}, 6.0, Options{Debug: true})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Should have 1 violation because directive doesn't name crap
+	if len(report.Violations) != 1 {
+		t.Errorf("expected 1 violation (directive names other checker), got %d", len(report.Violations))
+	}
+
+	if len(report.ExcludedFuncs) != 0 {
+		t.Errorf("expected 0 excluded funcs (directive names other checker), got %d", len(report.ExcludedFuncs))
+	}
+}

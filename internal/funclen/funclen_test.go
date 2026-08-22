@@ -361,3 +361,54 @@ func TestCheck_CommentDirectiveTypoIsNotExcluded(t *testing.T) {
 		t.Errorf("expected 0 excluded funcs with typo, got %d", len(report.ExcludedFuncs))
 	}
 }
+
+func TestCheck_ExcludeFuncByCommentDirective_NamesThisChecker(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore:funclen"))
+
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+		Debug: true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("expected 0 violations with funclen-specific comment directive, got %d", len(report.Violations))
+	}
+
+	if len(report.ExcludedFuncs) != 1 {
+		t.Errorf("expected 1 excluded func, got %d", len(report.ExcludedFuncs))
+	}
+
+	if report.ExcludedFuncs[0].Reason != "comment" {
+		t.Errorf("expected reason=comment, got %q", report.ExcludedFuncs[0].Reason)
+	}
+	if report.ExcludedFuncs[0].Func != "Foo" {
+		t.Errorf("expected Func=Foo, got %q", report.ExcludedFuncs[0].Func)
+	}
+}
+
+func TestCheck_ExcludeFuncByCommentDirective_NamesOtherCheckerOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Comment directive names only "crap", not "funclen"
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore:crap"))
+
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+		Debug: true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Should have 1 violation because directive doesn't name funclen
+	if len(report.Violations) != 1 {
+		t.Errorf("expected 1 violation (directive names other checker), got %d", len(report.Violations))
+	}
+
+	if len(report.ExcludedFuncs) != 0 {
+		t.Errorf("expected 0 excluded funcs (directive names other checker), got %d", len(report.ExcludedFuncs))
+	}
+}

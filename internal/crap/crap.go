@@ -7,11 +7,11 @@ import (
 	"go/token"
 	"math"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"gardener-go/internal/funcignore"
 	"gardener-go/internal/gofiles"
 )
 
@@ -64,29 +64,6 @@ func evaluate(comp int, cov float64, threshold float64) (score float64, violated
 	score = crapScore(comp, cov)
 	violated = score > threshold
 	return
-}
-
-// excludeFuncReason checks if a function should be excluded based on name patterns or comment directives.
-// Returns (excluded, reason) where reason is one of: "flag", "comment", or "" (if not excluded).
-func excludeFuncReason(fn *ast.FuncDecl, patterns []string) (bool, string) {
-	// Check if function name matches any exclude pattern
-	for _, p := range patterns {
-		if match, _ := path.Match(p, fn.Name.Name); match {
-			return true, "flag"
-		}
-	}
-
-	// Check for // gardener:ignore comment directive
-	if fn.Doc != nil {
-		for _, comment := range fn.Doc.List {
-			text := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
-			if text == "gardener:ignore" {
-				return true, "comment"
-			}
-		}
-	}
-
-	return false, ""
 }
 
 // findModule walks upward from startDir looking for a go.mod file.
@@ -211,7 +188,7 @@ func evalFuncCrap(fn *ast.FuncDecl, fset *token.FileSet, filePath string, fileBl
 	startLine := fset.Position(fn.Body.Pos()).Line
 	endLine := fset.Position(fn.Body.End()).Line
 
-	if excluded, reason := excludeFuncReason(fn, opts.ExcludeFuncs); excluded {
+	if excluded, reason := funcignore.Reason(fn, opts.ExcludeFuncs, "crap"); excluded {
 		if !opts.Debug {
 			return nil, nil
 		}
