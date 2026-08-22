@@ -44,6 +44,40 @@ func initModule(t *testing.T, dir string) {
 	t.Cleanup(func() { os.Chdir(oldCwd) })
 }
 
+type funcViolation struct {
+	Func string `json:"func"`
+}
+
+type allReport struct {
+	Funclen struct {
+		Violations []funcViolation `json:"violations"`
+	} `json:"funclen"`
+	Crap struct {
+		Violations []funcViolation `json:"violations"`
+	} `json:"crap"`
+}
+
+// runAll runs "all --format=json ." against the current directory and parses the report.
+func runAllJSON(t *testing.T) (allReport, int) {
+	t.Helper()
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+	var report allReport
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s\nstderr: %s", err, stdoutBuf.String(), stderrBuf.String())
+	}
+	return report, exitCode
+}
+
+func hasViolation(vs []funcViolation, name string) bool {
+	for _, v := range vs {
+		if v.Func == name {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRun_TextFormatMatchesExpectedLine(t *testing.T) {
 	// Create a file with a 105-line function
 	lines := []string{"package main", "", "func Violating() {"}
@@ -851,88 +885,25 @@ func TestRun_SetupWriteFailureExitsTwo(t *testing.T) {
 func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
 	// Create a fixture with a function long enough for funclen (105 lines)
 	// and complex enough for crap (5 nested ifs = complexity 5, with no coverage = score = 5^2*(1-0)^3 + 5 = 30, way above 6.0 threshold)
-	src := `package main
-
-// gardener:ignore:crap
-func ViolatingFunc() {
-`
-	// Add 100 lines to make it violate funclen (105 lines > 50 limit)
+	src := "package main\n\n// gardener:ignore:crap\nfunc ViolatingFunc() {\n"
 	for i := 0; i < 100; i++ {
 		src += fmt.Sprintf("\t_ = %d\n", i)
 	}
-	src += `	if true {
-		if true {
-			if true {
-				if true {
-					if true {
-						_ = "x"
-					}
-				}
-			}
-		}
-	}
-}
-`
+	src += "\tif true {\n\t\tif true {\n\t\t\tif true {\n\t\t\t\tif true {\n\t\t\t\t\tif true {\n\t\t\t\t\t\t_ = \"x\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"
 
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
+	writeGoFile(t, tmpDir, "main.go", src)
+	initModule(t, tmpDir)
 
-	// Initialize go module (required for crap to run)
-	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-
-	// Parse the combined JSON report
-	var combined struct {
-		Funclen struct {
-			Violations []struct {
-				Func string `json:"func"`
-			} `json:"violations"`
-		} `json:"funclen"`
-		Crap struct {
-			Violations []struct {
-				Func string `json:"func"`
-			} `json:"violations"`
-		} `json:"crap"`
-	}
-
-	if err := json.Unmarshal([]byte(output), &combined); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
-		return
-	}
+	report, exitCode := runAllJSON(t)
 
 	// funclen should report ViolatingFunc (directive doesn't name funclen)
-	funclenViolationFound := false
-	for _, v := range combined.Funclen.Violations {
-		if v.Func == "ViolatingFunc" {
-			funclenViolationFound = true
-			break
-		}
-	}
-	if !funclenViolationFound {
-		t.Errorf("expected ViolatingFunc in funclen violations, got %v", combined.Funclen.Violations)
+	if !hasViolation(report.Funclen.Violations, "ViolatingFunc") {
+		t.Errorf("expected ViolatingFunc in funclen violations, got %v", report.Funclen.Violations)
 	}
 
 	// crap should NOT report ViolatingFunc (directive names crap, so it's excluded)
-	crapViolationFound := false
-	for _, v := range combined.Crap.Violations {
-		if v.Func == "ViolatingFunc" {
-			crapViolationFound = true
-			break
-		}
-	}
-	if crapViolationFound {
+	if hasViolation(report.Crap.Violations, "ViolatingFunc") {
 		t.Errorf("expected ViolatingFunc NOT in crap violations, but found it")
 	}
 
@@ -990,14 +961,13 @@ func chdirTemp() {
 func TestRun_AllCrapSectionIgnoresTestFilesByDefault(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Write main.go with a trivial function
 	writeGoFile(t, tmpDir, "main.go", `package main
 func Add(a, b int) int {
 	return a + b
 }
 `)
 
-	// Write main_test.go with an untested, deeply-nested helper function
+	// main_test.go has an untested, deeply-nested helper function
 	writeGoFile(t, tmpDir, "main_test.go", `package main
 import "testing"
 func TestAdd(t *testing.T) {
@@ -1008,53 +978,15 @@ func chdirTemp() {
 }
 `)
 
-	// Write go.mod
-	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
+	initModule(t, tmpDir)
 
 	// Run "all" with JSON format (uses default thresholds: funclen=50, crap=6.0)
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+	report, exitCode := runAllJSON(t)
 
-	output := stdoutBuf.String()
-	stderrOutput := stderrBuf.String()
-
-	// Debug: print actual output and stderr
-	if stderrOutput != "" {
-		t.Logf("stderr: %s", stderrOutput)
+	if hasViolation(report.Crap.Violations, "chdirTemp") {
+		t.Errorf("expected chdirTemp not to be reported in crap section, but found it")
 	}
 
-	// Parse the combined report
-	var combined struct {
-		Crap struct {
-			Violations []struct {
-				Func string `json:"func"`
-			} `json:"violations"`
-		} `json:"crap"`
-	}
-
-	if output == "" {
-		t.Logf("output is empty, stderr: %s", stderrOutput)
-		t.Errorf("expected JSON output but got empty string")
-		return
-	}
-
-	if err := json.Unmarshal([]byte(output), &combined); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
-		return
-	}
-
-	// Assert that chdirTemp is NOT in crap violations
-	for _, v := range combined.Crap.Violations {
-		if v.Func == "chdirTemp" {
-			t.Errorf("expected chdirTemp not to be reported in crap section, but found it")
-		}
-	}
-
-	// Exit code should be 0 (no violations)
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0 (clean), got %d", exitCode)
 	}

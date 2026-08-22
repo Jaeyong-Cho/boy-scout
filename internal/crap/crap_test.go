@@ -3,6 +3,7 @@ package crap
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -452,14 +453,7 @@ func chdirTemp() {
 		t.Errorf("expected at least 1 excluded file in debug output, got 0")
 	}
 
-	found := false
-	for _, ef := range report.ExcludedFiles {
-		if ef == "main_test.go" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(report.ExcludedFiles, "main_test.go") {
 		t.Errorf("expected main_test.go in ExcludedFiles, got: %v", report.ExcludedFiles)
 	}
 }
@@ -498,26 +492,10 @@ func mockSetup() {
 		t.Fatalf("Check failed: %v", err)
 	}
 
-	// Assert both files are excluded
-	if len(report.ExcludedFiles) < 2 {
-		t.Errorf("expected at least 2 excluded files (main_test.go + mocks_test.go), got %d: %v", len(report.ExcludedFiles), report.ExcludedFiles)
-	}
-
-	hasMainTest := false
-	hasMocksTest := false
-	for _, ef := range report.ExcludedFiles {
-		if ef == "main_test.go" {
-			hasMainTest = true
-		}
-		if ef == "mocks_test.go" {
-			hasMocksTest = true
-		}
-	}
-
-	if !hasMainTest {
+	if !slices.Contains(report.ExcludedFiles, "main_test.go") {
 		t.Errorf("expected main_test.go in excluded files")
 	}
-	if !hasMocksTest {
+	if !slices.Contains(report.ExcludedFiles, "mocks_test.go") {
 		t.Errorf("expected mocks_test.go in excluded files")
 	}
 

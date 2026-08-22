@@ -27,21 +27,41 @@ func Reason(fn *ast.FuncDecl, patterns []string, checker string) (bool, string) 
 		}
 	}
 
-	if fn.Doc != nil {
-		for _, comment := range fn.Doc.List {
-			text := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
-			if text == "gardener:ignore" {
-				return true, "comment"
-			}
-			if rest, ok := strings.CutPrefix(text, "gardener:ignore:"); ok {
-				for _, name := range strings.Split(rest, ",") {
-					if strings.TrimSpace(name) == checker {
-						return true, "comment"
-					}
-				}
-			}
-		}
+	if hasIgnoreComment(fn, checker) {
+		return true, "comment"
 	}
 
 	return false, ""
+}
+
+func hasIgnoreComment(fn *ast.FuncDecl, checker string) bool {
+	if fn.Doc == nil {
+		return false
+	}
+	for _, comment := range fn.Doc.List {
+		if commentIgnores(comment.Text, checker) {
+			return true
+		}
+	}
+	return false
+}
+
+// commentIgnores reports whether a single doc-comment line is a
+// `// gardener:ignore` or `// gardener:ignore:checker[,checker...]` directive
+// applying to checker.
+func commentIgnores(commentText, checker string) bool {
+	text := strings.TrimSpace(strings.TrimPrefix(commentText, "//"))
+	if text == "gardener:ignore" {
+		return true
+	}
+	rest, ok := strings.CutPrefix(text, "gardener:ignore:")
+	if !ok {
+		return false
+	}
+	for _, name := range strings.Split(rest, ",") {
+		if strings.TrimSpace(name) == checker {
+			return true
+		}
+	}
+	return false
 }
