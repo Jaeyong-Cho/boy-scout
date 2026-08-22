@@ -1,3 +1,3 @@
-module go-gardener
+module gardener-go
 
 go 1.24

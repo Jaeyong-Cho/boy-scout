@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go-gardener/internal/crap"
-	"go-gardener/internal/funclen"
-	"go-gardener/internal/setup"
+	"gardener-go/internal/crap"
+	"gardener-go/internal/funclen"
+	"gardener-go/internal/setup"
 )
 
 func assertf(cond bool, format string, args ...any) {
@@ -91,7 +91,7 @@ var subcommands = map[string]func(args []string, stdout, stderr io.Writer) int{
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: gardener <subcommand> [options] [paths...]")
+		fmt.Fprintln(stderr, "usage: gardener-go <subcommand> [options] [paths...]")
 		fmt.Fprintln(stderr, "subcommands: funclen, crap, all, setup")
 		return 2
 	}
@@ -304,7 +304,7 @@ func prepareSetupArgs(global bool) (baseDir, exePath string, err error) {
 
 func runSetup(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
-	global := fs.Bool("global", false, "install to ~/.agent/skills/gardener instead of ./.agent/skills/gardener")
+	global := fs.Bool("global", false, "install to ~/.agent/skills/gardener-go instead of ./.agent/skills/gardener-go")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "parse error: %v\n", err)
@@ -313,7 +313,7 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 
 	// Reject extra positional arguments
 	if len(fs.Args()) > 0 {
-		fmt.Fprintln(stderr, "usage: gardener setup [--global]")
+		fmt.Fprintln(stderr, "usage: gardener-go setup [--global]")
 		return 2
 	}
 
@@ -330,7 +330,7 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	fmt.Fprintf(stdout, "gardener skill installed: %s\n", path)
+	fmt.Fprintf(stdout, "gardener-go skill installed: %s\n", path)
 	return 0
 }
 

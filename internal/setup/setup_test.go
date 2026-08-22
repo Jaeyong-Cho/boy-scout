@@ -15,7 +15,7 @@ func TestRun_CreatesSkillFileAtBaseDir(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(baseDir, ".agents", "skills", "gardener", "SKILL.md")
+	expectedPath := filepath.Join(baseDir, ".agents", "skills", "gardener-go", "SKILL.md")
 	if path != expectedPath {
 		t.Errorf("expected path %q, got %q", expectedPath, path)
 	}
@@ -85,8 +85,8 @@ func TestRun_TemplateDeclaresUserInvokedFixLoop(t *testing.T) {
 	contentStr := string(content)
 
 	// Verify frontmatter
-	if !strings.Contains(contentStr, "name: gardener") {
-		t.Errorf("expected 'name: gardener' in frontmatter, got:\n%s", contentStr)
+	if !strings.Contains(contentStr, "name: gardener-go") {
+		t.Errorf("expected 'name: gardener-go' in frontmatter, got:\n%s", contentStr)
 	}
 	if !strings.Contains(contentStr, "description:") {
 		t.Errorf("expected 'description:' in frontmatter, got:\n%s", contentStr)
@@ -96,8 +96,8 @@ func TestRun_TemplateDeclaresUserInvokedFixLoop(t *testing.T) {
 	}
 
 	// Verify instructions
-	if !strings.Contains(contentStr, "gardener all") {
-		t.Errorf("expected 'gardener all' in skill body, got:\n%s", contentStr)
+	if !strings.Contains(contentStr, "gardener-go all") {
+		t.Errorf("expected 'gardener-go all' in skill body, got:\n%s", contentStr)
 	}
 	if !strings.Contains(contentStr, "go test") {
 		t.Errorf("expected 'go test' in skill body, got:\n%s", contentStr)
@@ -107,7 +107,7 @@ func TestRun_TemplateDeclaresUserInvokedFixLoop(t *testing.T) {
 func TestRun_CopiesBinaryWhenPathGiven(t *testing.T) {
 	baseDir := t.TempDir()
 
-	binarySrc := filepath.Join(t.TempDir(), "gardener")
+	binarySrc := filepath.Join(t.TempDir(), "gardener-go")
 	if err := os.WriteFile(binarySrc, []byte("fake binary content"), 0755); err != nil {
 		t.Fatalf("failed to write fake binary: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestRun_CopiesBinaryWhenPathGiven(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
-	binPath := filepath.Join(baseDir, ".agents", "bin", "gardener")
+	binPath := filepath.Join(baseDir, ".agents", "bin", "gardener-go")
 	content, err := os.ReadFile(binPath)
 	if err != nil {
 		t.Fatalf("expected binary copied to %q: %v", binPath, err)

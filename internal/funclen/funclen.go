@@ -8,7 +8,7 @@ import (
 	"path"
 	"strings"
 
-	"go-gardener/internal/gofiles"
+	"gardener-go/internal/gofiles"
 )
 
 type Violation struct {

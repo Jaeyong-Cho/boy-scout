@@ -249,8 +249,8 @@ func TestRun_NoSubcommandPrintsUsage(t *testing.T) {
 	exitCode := run([]string{}, &stdoutBuf, &stderrBuf)
 
 	stderr := stderrBuf.String()
-	if !strings.Contains(stderr, "funclen") || !strings.Contains(stderr, "crap") || !strings.Contains(stderr, "all") {
-		t.Errorf("expected usage message with 'funclen', 'crap' and 'all', got:\n%s", stderr)
+	if !strings.Contains(stderr, "funclen") || !strings.Contains(stderr, "crap") || !strings.Contains(stderr, "all") || !strings.Contains(stderr, "gardener-go") {
+		t.Errorf("expected usage message with 'funclen', 'crap', 'all' and 'gardener-go', got:\n%s", stderr)
 	}
 
 	if exitCode == 0 {
@@ -731,18 +731,18 @@ func TestRun_SetupLocalWritesRelativeSkillFile(t *testing.T) {
 	}
 
 	stdout := stdoutBuf.String()
-	if !strings.Contains(stdout, "gardener skill installed:") {
-		t.Errorf("expected 'gardener skill installed:' in stdout, got: %s", stdout)
+	if !strings.Contains(stdout, "gardener-go skill installed:") {
+		t.Errorf("expected 'gardener-go skill installed:' in stdout, got: %s", stdout)
 	}
 
 	// Verify the skill file exists
-	skillPath := filepath.Join(tmpDir, ".agents", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(tmpDir, ".agents", "skills", "gardener-go", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("skill file not found at %q: %v", skillPath, err)
 	}
 
 	// Verify the binary was copied
-	binPath := filepath.Join(tmpDir, ".agents", "bin", "gardener")
+	binPath := filepath.Join(tmpDir, ".agents", "bin", "gardener-go")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Fatalf("binary not found at %q: %v", binPath, err)
 	}
@@ -761,13 +761,13 @@ func TestRun_SetupGlobalWritesToHomeDir(t *testing.T) {
 	}
 
 	// Verify the skill file exists in the home directory
-	skillPath := filepath.Join(homeDir, ".agents", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(homeDir, ".agents", "skills", "gardener-go", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("skill file not found at %q: %v", skillPath, err)
 	}
 
 	// Verify the binary was copied
-	binPath := filepath.Join(homeDir, ".agents", "bin", "gardener")
+	binPath := filepath.Join(homeDir, ".agents", "bin", "gardener-go")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Fatalf("binary not found at %q: %v", binPath, err)
 	}
