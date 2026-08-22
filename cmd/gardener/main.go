@@ -66,25 +66,19 @@ func lookupSetupTarget(name string) (prefix string, ok bool) {
 	return "", false
 }
 
-// promptForTarget prints a numbered list of targets to stdout, reads one line from stdin,
-// and returns the target name (either by 1-based index or name match).
-// Returns an error if the input is invalid, empty, or EOF.
-func promptForTarget(stdin io.Reader, stdout io.Writer) (name string, err error) {
-	// Print the numbered list
+// printTargetPrompt writes the numbered target list and input prompt to stdout.
+func printTargetPrompt(stdout io.Writer) {
 	fmt.Fprintf(stdout, "Select a target:\n")
 	for i, t := range setupTargets {
 		fmt.Fprintf(stdout, "%d) %s\n", i+1, t.name)
 	}
 	fmt.Fprintf(stdout, "> ")
+}
 
-	// Read one line from stdin
-	scanner := bufio.NewScanner(stdin)
-	if !scanner.Scan() {
-		// EOF or scan error (empty input, no newline, etc.)
-		return "", fmt.Errorf("no input provided; valid targets: %v", setupTargetNames())
-	}
-
-	input := strings.TrimSpace(scanner.Text())
+// parseTargetSelection resolves one line of raw input to a target name,
+// matching either by 1-based index or by name.
+func parseTargetSelection(input string) (name string, err error) {
+	input = strings.TrimSpace(input)
 	if input == "" {
 		return "", fmt.Errorf("empty input; valid targets: %v", setupTargetNames())
 	}
@@ -103,6 +97,21 @@ func promptForTarget(stdin io.Reader, stdout io.Writer) (name string, err error)
 	}
 
 	return "", fmt.Errorf("unknown target %q; valid targets: %v", input, setupTargetNames())
+}
+
+// promptForTarget prints a numbered list of targets to stdout, reads one line from stdin,
+// and returns the target name (either by 1-based index or name match).
+// Returns an error if the input is invalid, empty, or EOF.
+func promptForTarget(stdin io.Reader, stdout io.Writer) (name string, err error) {
+	printTargetPrompt(stdout)
+
+	scanner := bufio.NewScanner(stdin)
+	if !scanner.Scan() {
+		// EOF or scan error (empty input, no newline, etc.)
+		return "", fmt.Errorf("no input provided; valid targets: %v", setupTargetNames())
+	}
+
+	return parseTargetSelection(scanner.Text())
 }
 
 // isInteractive checks if the given reader is a terminal (real TTY).
@@ -231,20 +240,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runSetup(args[1:], os.Stdin, stdout, stderr)
 	}
 
-	// Dispatch by language
-	lang := args[0]
+	return dispatchLang(args[0], args[1:], stdout, stderr)
+}
+
+// dispatchLang looks up the subcommand handler for lang and runs it with the
+// remaining args, printing usage/error messages to stderr as needed.
+func dispatchLang(lang string, args []string, stdout, stderr io.Writer) int {
 	subcommands, ok := langSubcommands[lang]
 	if !ok {
 		fmt.Fprintf(stderr, "unknown language: %s\n", lang)
 		return 2
 	}
 
-	if len(args) < 2 {
+	if len(args) < 1 {
 		fmt.Fprintf(stderr, "usage: gardener %s <command> [options] [paths...]\n", lang)
 		return 2
 	}
 
-	subcommand := args[1]
+	subcommand := args[0]
 	fn, ok := subcommands[subcommand]
 	if !ok {
 		fmt.Fprintf(stderr, "unknown subcommand for %s: %s\n", lang, subcommand)
@@ -252,7 +265,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	assertf(fn != nil, "registered subcommand handler for %s/%s is nil", lang, subcommand)
-	return fn(args[2:], stdout, stderr)
+	return fn(args[1:], stdout, stderr)
 }
 
 func runGoFunclen(args []string, stdout, stderr io.Writer) int {
@@ -485,28 +498,34 @@ func prepareSetupArgs(global bool) (baseDir, exePath string, err error) {
 	return baseDir, exePath, nil
 }
 
-func runSetup(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	// Manually scan for --global flag and collect positional arguments.
-	// This allows --global to appear in any position without flag.Parse() silently ignoring it.
-	var global bool
-	var positional []string
-
+// parseSetupArgs manually scans args for a --global flag and collects positional
+// arguments, since --global may appear in any position and flag.Parse() alone
+// can't express that. Returns an error (with any usage message already written
+// to stderr) if an unknown flag or more than one positional argument is found.
+func parseSetupArgs(args []string, stderr io.Writer) (global bool, positional []string, err error) {
 	for _, arg := range args {
 		if arg == "--global" || arg == "-global" {
 			global = true
 		} else if strings.HasPrefix(arg, "-") {
-			// Unknown flag
 			fmt.Fprintf(stderr, "unknown flag: %s\n", arg)
 			fmt.Fprintln(stderr, "usage: gardener setup [claude|copilot|pi|agents] [--global]")
-			return 2
+			return false, nil, fmt.Errorf("unknown flag: %s", arg)
 		} else {
 			positional = append(positional, arg)
 		}
 	}
 
-	// Reject more than one positional argument
 	if len(positional) > 1 {
 		fmt.Fprintln(stderr, "usage: gardener setup [claude|copilot|pi|agents] [--global]")
+		return false, nil, fmt.Errorf("too many positional arguments")
+	}
+
+	return global, positional, nil
+}
+
+func runSetup(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	global, positional, err := parseSetupArgs(args, stderr)
+	if err != nil {
 		return 2
 	}
 

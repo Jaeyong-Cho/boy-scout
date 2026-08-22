@@ -1,8 +1,10 @@
 package cppfunclen
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -17,63 +19,21 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+// fillerLines returns n valid, uniquely-named C++ declaration lines starting
+// at index start, used to pad a function body past the funclen limit.
+func fillerLines(start, n int) string {
+	var b strings.Builder
+	for i := start; i < start+n; i++ {
+		fmt.Fprintf(&b, "  int v%d = %d;\n", i, i)
+	}
+	return b.String()
+}
+
 func TestCheck_ReportsViolationForOverLimitFunction(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Write a C++ file with a function over 50 lines
-	code := `void longFunction() {
-  int x = 1;
-  int y = 2;
-  int z = 3;
-  int a = 4;
-  int b = 5;
-  int c = 6;
-  int d = 7;
-  int e = 8;
-  int f = 9;
-  int g = 10;
-  int h = 11;
-  int i = 12;
-  int j = 13;
-  int k = 14;
-  int l = 15;
-  int m = 16;
-  int n = 17;
-  int o = 18;
-  int p = 19;
-  int q = 20;
-  int r = 21;
-  int s = 22;
-  int u = 23;
-  int v = 24;
-  int w = 25;
-  int x1 = 26;
-  int x2 = 27;
-  int x3 = 28;
-  int x4 = 29;
-  int x5 = 30;
-  int x6 = 31;
-  int x7 = 32;
-  int x8 = 33;
-  int x9 = 34;
-  int x10 = 35;
-  int x11 = 36;
-  int x12 = 37;
-  int x13 = 38;
-  int x14 = 39;
-  int x15 = 40;
-  int x16 = 41;
-  int x17 = 42;
-  int x18 = 43;
-  int x19 = 44;
-  int x20 = 45;
-  int x21 = 46;
-  int x22 = 47;
-  int x23 = 48;
-  int x24 = 49;
-  int x25 = 50;
-  int x26 = 51;
-}`
+	code := "void longFunction() {\n" + fillerLines(0, 51) + "}"
 
 	cppFile := filepath.Join(tmpDir, "test.cpp")
 	writeFile(t, cppFile, code)
@@ -156,58 +116,7 @@ public:
 };
 
 void Widget::resize() {
-  int x = 1;
-  int y = 2;
-  int z = 3;
-  int a = 4;
-  int b = 5;
-  int c = 6;
-  int d = 7;
-  int e = 8;
-  int f = 9;
-  int g = 10;
-  int h = 11;
-  int i = 12;
-  int j = 13;
-  int k = 14;
-  int l = 15;
-  int m = 16;
-  int n = 17;
-  int o = 18;
-  int p = 19;
-  int q = 20;
-  int r = 21;
-  int s = 22;
-  int t = 23;
-  int u = 24;
-  int v = 25;
-  int w = 26;
-  int x1 = 27;
-  int x2 = 28;
-  int x3 = 29;
-  int x4 = 30;
-  int x5 = 31;
-  int x6 = 32;
-  int x7 = 33;
-  int x8 = 34;
-  int x9 = 35;
-  int x10 = 36;
-  int x11 = 37;
-  int x12 = 38;
-  int x13 = 39;
-  int x14 = 40;
-  int x15 = 41;
-  int x16 = 42;
-  int x17 = 43;
-  int x18 = 44;
-  int x19 = 45;
-  int x20 = 46;
-  int x21 = 47;
-  int x22 = 48;
-  int x23 = 49;
-  int x24 = 50;
-  int x25 = 51;
-}`
+` + fillerLines(0, 51) + `}`
 
 	cppFile := filepath.Join(tmpDir, "widget.cpp")
 	writeFile(t, cppFile, code)
@@ -235,64 +144,13 @@ func TestCheck_AttributesLambdaLinesToEnclosingFunction(t *testing.T) {
 
 	// Write a C++ file with a lambda nested in a function
 	code := `void outerFunction() {
-  int x = 1;
-  int y = 2;
-  int z = 3;
-  int a = 4;
-  int b = 5;
-  int c = 6;
-  int d = 7;
-  int e = 8;
-  int f = 9;
-  int g = 10;
-  int h = 11;
-  int i = 12;
-  int j = 13;
-  int k = 14;
-  int l = 15;
-  int m = 16;
-  int n = 17;
-  int o = 18;
-  int p = 19;
-  int q = 20;
-  int r = 21;
-  int s = 22;
-  int t = 23;
-  int u = 24;
-  int v = 25;
-  int w = 26;
-  int x1 = 27;
-  int x2 = 28;
-  int x3 = 29;
-  int x4 = 30;
-  int x5 = 31;
-
+` + fillerLines(0, 31) + `
   auto lambda = [](int val) {
     int result = val * 2;
     return result;
   };
 
-  int x6 = 32;
-  int x7 = 33;
-  int x8 = 34;
-  int x9 = 35;
-  int x10 = 36;
-  int x11 = 37;
-  int x12 = 38;
-  int x13 = 39;
-  int x14 = 40;
-  int x15 = 41;
-  int x16 = 42;
-  int x17 = 43;
-  int x18 = 44;
-  int x19 = 45;
-  int x20 = 46;
-  int x21 = 47;
-  int x22 = 48;
-  int x23 = 49;
-  int x24 = 50;
-  int x25 = 51;
-}`
+` + fillerLines(31, 20) + `}`
 
 	cppFile := filepath.Join(tmpDir, "lambda.cpp")
 	writeFile(t, cppFile, code)
@@ -320,59 +178,7 @@ func TestCheck_ExcludeFuncFlagFiltersByGlobName(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Write a C++ file with a function matching the exclude pattern
-	code := `void fooTest() {
-  int x = 1;
-  int y = 2;
-  int z = 3;
-  int a = 4;
-  int b = 5;
-  int c = 6;
-  int d = 7;
-  int e = 8;
-  int f = 9;
-  int g = 10;
-  int h = 11;
-  int i = 12;
-  int j = 13;
-  int k = 14;
-  int l = 15;
-  int m = 16;
-  int n = 17;
-  int o = 18;
-  int p = 19;
-  int q = 20;
-  int r = 21;
-  int s = 22;
-  int t = 23;
-  int u = 24;
-  int v = 25;
-  int w = 26;
-  int x1 = 27;
-  int x2 = 28;
-  int x3 = 29;
-  int x4 = 30;
-  int x5 = 31;
-  int x6 = 32;
-  int x7 = 33;
-  int x8 = 34;
-  int x9 = 35;
-  int x10 = 36;
-  int x11 = 37;
-  int x12 = 38;
-  int x13 = 39;
-  int x14 = 40;
-  int x15 = 41;
-  int x16 = 42;
-  int x17 = 43;
-  int x18 = 44;
-  int x19 = 45;
-  int x20 = 46;
-  int x21 = 47;
-  int x22 = 48;
-  int x23 = 49;
-  int x24 = 50;
-  int x25 = 51;
-}`
+	code := "void fooTest() {\n" + fillerLines(0, 51) + "}"
 
 	cppFile := filepath.Join(tmpDir, "test.cpp")
 	writeFile(t, cppFile, code)

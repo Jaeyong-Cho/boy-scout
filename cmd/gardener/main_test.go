@@ -6,9 +6,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+// cppFuncLenFillerLines returns n valid, uniquely-named C++ declaration
+// lines used to pad a function body past the funclen limit in tests.
+func cppFuncLenFillerLines(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "  int v%d = %d;\n", i, i)
+	}
+	return b.String()
+}
 
 // writeGoFile writes content to dir/name and returns the full path.
 func writeGoFile(t *testing.T, dir, name, content string) string {
@@ -1024,59 +1035,7 @@ func TestRun_CppFunclenReportsViolation(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a C++ file with a function exceeding the default 50-line limit
-	code := `void longFunction() {
-  int x = 1;
-  int y = 2;
-  int z = 3;
-  int a = 4;
-  int b = 5;
-  int c = 6;
-  int d = 7;
-  int e = 8;
-  int f = 9;
-  int g = 10;
-  int h = 11;
-  int i = 12;
-  int j = 13;
-  int k = 14;
-  int l = 15;
-  int m = 16;
-  int n = 17;
-  int o = 18;
-  int p = 19;
-  int q = 20;
-  int r = 21;
-  int s = 22;
-  int t = 23;
-  int u = 24;
-  int v = 25;
-  int w = 26;
-  int x1 = 27;
-  int x2 = 28;
-  int x3 = 29;
-  int x4 = 30;
-  int x5 = 31;
-  int x6 = 32;
-  int x7 = 33;
-  int x8 = 34;
-  int x9 = 35;
-  int x10 = 36;
-  int x11 = 37;
-  int x12 = 38;
-  int x13 = 39;
-  int x14 = 40;
-  int x15 = 41;
-  int x16 = 42;
-  int x17 = 43;
-  int x18 = 44;
-  int x19 = 45;
-  int x20 = 46;
-  int x21 = 47;
-  int x22 = 48;
-  int x23 = 49;
-  int x24 = 50;
-  int x25 = 51;
-}`
+	code := "void longFunction() {\n" + cppFuncLenFillerLines(51) + "}"
 
 	cppFile := filepath.Join(tmpDir, "test.cpp")
 	if err := os.WriteFile(cppFile, []byte(code), 0644); err != nil {
@@ -1193,6 +1152,47 @@ func TestPromptForTarget_InvalidSelectionReturnsError(t *testing.T) {
 			}
 			if tc.wantErr && err == nil {
 				t.Errorf("expected error, got none (returned name=%q)", name)
+			}
+		})
+	}
+}
+
+func TestResolveTarget(t *testing.T) {
+	testCases := []struct {
+		name        string
+		positional  []string
+		stdin       string
+		interactive bool
+		wantName    string
+		wantPrefix  string
+		wantErr     bool
+	}{
+		{"explicit target found", []string{"copilot"}, "", false, "copilot", ".copilot", false},
+		{"explicit target unknown", []string{"bogus"}, "", false, "", "", true},
+		{"interactive prompt success", nil, "pi\n", true, "pi", ".pi/agent", false},
+		{"interactive prompt error", nil, "\n", true, "", "", true},
+		{"non-interactive no target", nil, "", false, "", "", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			name, prefix, err := resolveTarget(tc.positional, strings.NewReader(tc.stdin), tc.interactive, &stdout)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got none (name=%q prefix=%q)", name, prefix)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if name != tc.wantName {
+				t.Errorf("expected name %q, got %q", tc.wantName, name)
+			}
+			if prefix != tc.wantPrefix {
+				t.Errorf("expected prefix %q, got %q", tc.wantPrefix, prefix)
 			}
 		})
 	}
@@ -1374,6 +1374,46 @@ func TestRun_SetupNoTargetNonInteractiveIsUsageError(t *testing.T) {
 		if _, err := os.Stat(dirPath); err == nil {
 			t.Errorf("expected %s directory not to be created for non-interactive no-target", prefix)
 		}
+	}
+}
+
+func TestParseSetupArgs(t *testing.T) {
+	testCases := []struct {
+		name           string
+		args           []string
+		wantGlobal     bool
+		wantPositional []string
+		wantErr        bool
+	}{
+		{"no args", nil, false, nil, false},
+		{"global flag", []string{"--global"}, true, nil, false},
+		{"single-dash global flag", []string{"-global"}, true, nil, false},
+		{"target and global", []string{"claude", "--global"}, true, []string{"claude"}, false},
+		{"unknown flag", []string{"--bogus"}, false, nil, true},
+		{"too many positional args", []string{"claude", "copilot"}, false, nil, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stderrBuf bytes.Buffer
+			global, positional, err := parseSetupArgs(tc.args, &stderrBuf)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if global != tc.wantGlobal {
+				t.Errorf("expected global=%v, got %v", tc.wantGlobal, global)
+			}
+			if !reflect.DeepEqual(positional, tc.wantPositional) {
+				t.Errorf("expected positional=%v, got %v", tc.wantPositional, positional)
+			}
+		})
 	}
 }
 

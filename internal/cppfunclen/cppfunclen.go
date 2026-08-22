@@ -113,7 +113,7 @@ func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
 	assertf(bodyNode != nil, "function_definition node without compound_statement (body) field: %s", node.Type())
 
 	// Extract function name
-	name := extractFunctionName(node, declaratorNode, source)
+	name := extractFunctionName(declaratorNode, source)
 
 	// Get start and end line from body's range
 	// Note: tree-sitter uses 0-indexed lines, but we want 1-indexed
@@ -127,35 +127,38 @@ func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
 	}
 }
 
-// extractFunctionName extracts the qualified or simple name of a function
-func extractFunctionName(funcDefNode, declaratorNode *sitter.Node, source []byte) string {
+// extractFunctionName extracts the qualified or simple name of a function.
+// For out-of-line methods like Widget::resize(), it extracts the qualified name.
+func extractFunctionName(declaratorNode *sitter.Node, source []byte) string {
 	if declaratorNode == nil {
 		return "?"
 	}
+	if name := declaratorIdentifierName(declaratorNode, source); name != "" {
+		return name
+	}
+	return declaratorFallbackName(declaratorNode, source)
+}
 
-	// Walk the declarator to find the identifier or qualified_identifier
-	// For out-of-line methods like Widget::resize(), we need to extract the qualified name
-	// The structure is: function_declarator -> qualified_identifier or identifier
-
-	text := string(source[declaratorNode.StartByte():declaratorNode.EndByte()])
-
-	// Extract just the declarator content (before the parameter list)
-	// Look for "identifier" or "qualified_identifier" children
+// declaratorIdentifierName walks the declarator's direct children looking for
+// an identifier/qualified_identifier/field_identifier node, returning "" if none found.
+// The structure is: function_declarator -> qualified_identifier or identifier.
+func declaratorIdentifierName(declaratorNode *sitter.Node, source []byte) string {
 	for i := uint32(0); i < declaratorNode.ChildCount(); i++ {
 		child := declaratorNode.Child(int(i))
 		if child.Type() == "qualified_identifier" || child.Type() == "identifier" || child.Type() == "field_identifier" {
-			name := string(source[child.StartByte():child.EndByte()])
-			return strings.TrimSpace(name)
+			return strings.TrimSpace(string(source[child.StartByte():child.EndByte()]))
 		}
 	}
+	return ""
+}
 
-	// Fallback: try to extract from the declarator text before the parameter list
-	// Look for the part before "("
+// declaratorFallbackName extracts the declarator text before its parameter
+// list, used when no identifier child node was found.
+func declaratorFallbackName(declaratorNode *sitter.Node, source []byte) string {
+	text := string(source[declaratorNode.StartByte():declaratorNode.EndByte()])
 	if idx := strings.Index(text, "("); idx != -1 {
-		name := strings.TrimSpace(text[:idx])
-		return name
+		return strings.TrimSpace(text[:idx])
 	}
-
 	return "?"
 }
 
