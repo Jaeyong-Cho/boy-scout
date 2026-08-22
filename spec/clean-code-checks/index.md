@@ -7,7 +7,8 @@ Catches clean-code violations — starting with oversized functions — before t
 Every Story below shipped.
 
 ## Overview
-The first check implemented is func-length-limit, which flags functions exceeding a configurable line-length limit (default 100). Additional checks (CRAP score, cyclomatic complexity, nesting depth, naming rules) will be added as future Stories in this EPIC.
+The first check implemented is func-length-limit, which flags functions exceeding a configurable line-length limit (default 50). The second check is CRAP score, which flags functions combining high cyclomatic complexity with low test coverage. Additional checks (cyclomatic complexity, nesting depth, naming rules) will be added as future Stories in this EPIC.
 
 ## Stories
 - [func-length-limit](./func-length-limit.md)
+- [crap-score](./crap-score.md)

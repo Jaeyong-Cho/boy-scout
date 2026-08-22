@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -242,8 +243,8 @@ func TestRun_NoSubcommandPrintsUsage(t *testing.T) {
 	exitCode := run([]string{}, &stdoutBuf, &stderrBuf)
 
 	stderr := stderrBuf.String()
-	if !strings.Contains(stderr, "funclen") || !strings.Contains(stderr, "all") {
-		t.Errorf("expected usage message with 'funclen' and 'all', got:\n%s", stderr)
+	if !strings.Contains(stderr, "funclen") || !strings.Contains(stderr, "crap") || !strings.Contains(stderr, "all") {
+		t.Errorf("expected usage message with 'funclen', 'crap' and 'all', got:\n%s", stderr)
 	}
 
 	if exitCode == 0 {
@@ -257,7 +258,7 @@ func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 
 	lines := []string{"package main", "", "func ViolatingFunc() {"}
 	for i := 0; i < 103; i++ {
-		lines = append(lines, "\tx := 1")
+		lines = append(lines, fmt.Sprintf("\t_ = %d", i))
 	}
 	lines = append(lines, "}")
 	src := strings.Join(lines, "\n")
@@ -266,15 +267,315 @@ func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"all", tmpDir}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"all", "."}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
+	stderr := stderrBuf.String()
 	if !strings.Contains(output, "ViolatingFunc is 105 lines (limit 50)") {
-		t.Errorf("expected funclen violation in 'all' output, got:\n%s", output)
+		t.Errorf("expected funclen violation in 'all' output, got:\nstdout: %s\nstderr: %s", output, stderr)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d (stderr: %s)", exitCode, stderr)
+	}
+}
+
+func TestRun_CrapRespectsThresholdFlag(t *testing.T) {
+	// Create a file with a complex untested function
+	src := `package main
+func ComplexFunc(x int) string {
+	if x > 10 {
+		if x > 20 {
+			return "big"
+		}
+		return "medium"
+	}
+	return "small"
+}
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"crap", "--threshold=2", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	// Should show threshold=2.00 in output
+	if !strings.Contains(output, "threshold=2.00") {
+		t.Errorf("expected 'threshold=2.00' in output, got:\n%s", output)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violations), got %d", exitCode)
+	}
+}
+
+func TestRun_CrapTextFormatMatchesExpectedLine(t *testing.T) {
+	// Create a file with a complex untested function
+	src := `package main
+func ComplexFunc(x int) string {
+	if x > 10 {
+		if x > 20 {
+			return "big"
+		}
+		return "medium"
+	}
+	return "small"
+}
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"crap", "--threshold=1", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	// Expected format: "file:line: function Name has CRAP score X.XX (complexity=C, coverage=P.P%, threshold=T.TT)"
+	if !strings.Contains(output, "function ComplexFunc has CRAP score") {
+		t.Errorf("expected 'function ComplexFunc has CRAP score' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "complexity=") {
+		t.Errorf("expected 'complexity=' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "coverage=") {
+		t.Errorf("expected 'coverage=' in output, got:\n%s", output)
 	}
 
 	if exitCode != 1 {
 		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_CrapJSONFormatOutputsValidSchema(t *testing.T) {
+	// Create a file with a complex untested function
+	src := `package main
+func ComplexFunc(x int) string {
+	if x > 10 {
+		if x > 20 {
+			return "big"
+		}
+		return "medium"
+	}
+	return "small"
+}
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"crap", "--threshold=1", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Parse the JSON
+	var result struct {
+		Violations []struct {
+			File       string  `json:"file"`
+			Line       int     `json:"line"`
+			Func       string  `json:"func"`
+			Complexity int     `json:"complexity"`
+			Coverage   float64 `json:"coverage"`
+			Score      float64 `json:"score"`
+			Threshold  float64 `json:"threshold"`
+		}
+		Skipped []struct {
+			File  string `json:"file"`
+			Error string `json:"error"`
+		}
+	}
+
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
+		return
+	}
+
+	if len(result.Violations) == 0 {
+		t.Fatalf("expected at least 1 violation, got %d", len(result.Violations))
+	}
+
+	v := result.Violations[0]
+	if v.Func != "ComplexFunc" {
+		t.Errorf("expected func 'ComplexFunc', got '%s'", v.Func)
+	}
+	if v.Complexity <= 0 {
+		t.Errorf("expected positive complexity, got %d", v.Complexity)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_AllCombinesFunclenAndCrap(t *testing.T) {
+	// Create a file with both funclen and crap violations
+	src := `package main
+func ViolatingFunc() {
+`
+	// Add 105 lines to violate funclen
+	for i := 0; i < 103; i++ {
+		src += fmt.Sprintf("\t_ = %d\n", i)
+	}
+	src += `	if true {
+		if true {
+			if true {
+				_ = "a"
+			}
+		}
+	}
+}
+`
+
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"all", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	// Should have both funclen and crap violations
+	if !strings.Contains(output, "[funclen]") {
+		t.Errorf("expected '[funclen]' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "[crap]") {
+		t.Errorf("expected '[crap]' in output, got:\n%s", output)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
+	testCases := []struct {
+		name              string
+		funclenViolating  bool
+		crapViolating     bool
+		expectedExitCode  int
+	}{
+		{"both clean", false, false, 0},
+		{"only funclen violated", true, false, 1},
+		{"only crap violated", false, true, 1},
+		{"both violated", true, true, 1},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+
+			if tc.funclenViolating {
+				// Create a long function (105 lines)
+				src := "package main\nfunc LongFunc() {\n"
+				for i := 0; i < 103; i++ {
+					src += fmt.Sprintf("\t_ = %d\n", i)
+				}
+				src += "}\n"
+				if err := os.WriteFile(tmpDir+"/long.go", []byte(src), 0644); err != nil {
+					t.Fatalf("WriteFile failed: %v", err)
+				}
+			}
+
+			if tc.crapViolating {
+				// Create a complex untested function
+				src := `package main
+func ComplexFunc() {
+	if true {
+		if true {
+			if true {
+				if true {
+					_ = "x"
+				}
+			}
+		}
+	}
+}
+`
+				if err := os.WriteFile(tmpDir+"/complex.go", []byte(src), 0644); err != nil {
+					t.Fatalf("WriteFile failed: %v", err)
+				}
+			}
+
+			if !tc.funclenViolating && !tc.crapViolating {
+				// Create a clean file
+				src := `package main
+func CleanFunc() {
+	x := 1
+	_ = x
+}
+`
+				if err := os.WriteFile(tmpDir+"/clean.go", []byte(src), 0644); err != nil {
+					t.Fatalf("WriteFile failed: %v", err)
+				}
+			}
+
+			// Initialize go module
+			if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+				t.Fatalf("WriteFile failed: %v", err)
+			}
+
+			oldCwd, _ := os.Getwd()
+			os.Chdir(tmpDir)
+			defer os.Chdir(oldCwd)
+
+			var stdoutBuf, stderrBuf bytes.Buffer
+			exitCode := run([]string{"all", "."}, &stdoutBuf, &stderrBuf)
+
+			if exitCode != tc.expectedExitCode {
+				t.Errorf("expected exit code %d, got %d (output: %s)", tc.expectedExitCode, exitCode, stdoutBuf.String())
+			}
+		})
 	}
 }

@@ -5,9 +5,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
-	"path/filepath"
-	"strings"
+
+	"go-gardener/internal/gofiles"
 )
 
 type Violation struct {
@@ -18,10 +17,9 @@ type Violation struct {
 	Limit  int
 }
 
-type SkippedFile struct {
-	File  string
-	Error string
-}
+// SkippedFile is a type alias for gofiles.SkippedFile, preserving the existing
+// JSON field names and shape of the Violation output.
+type SkippedFile = gofiles.SkippedFile
 
 type Report struct {
 	Violations []Violation
@@ -43,54 +41,8 @@ func Check(paths []string, maxLines int) (Report, error) {
 	}
 
 	// Collect all .go files from the given paths
-	var filesToCheck []string
-
-	for _, path := range paths {
-		stat, err := os.Stat(path)
-		if err != nil {
-			report.Skipped = append(report.Skipped, SkippedFile{
-				File:  path,
-				Error: err.Error(),
-			})
-			continue
-		}
-
-		if !stat.IsDir() {
-			// It's a file, add it directly
-			filesToCheck = append(filesToCheck, path)
-		} else {
-			// It's a directory, walk it
-			err := filepath.WalkDir(path, func(filePath string, d os.DirEntry, err error) error {
-				if err != nil {
-					return err
-				}
-
-				// Skip vendor/ and dot-directories (but not the root)
-				if d.IsDir() {
-					name := d.Name()
-					// Don't skip the root directory itself, only subdirectories
-					if (name == "vendor" || strings.HasPrefix(name, ".")) && name != "." {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-
-				// Check if it's a .go file
-				if strings.HasSuffix(filePath, ".go") {
-					filesToCheck = append(filesToCheck, filePath)
-				}
-
-				return nil
-			})
-
-			if err != nil {
-				report.Skipped = append(report.Skipped, SkippedFile{
-					File:  path,
-					Error: err.Error(),
-				})
-			}
-		}
-	}
+	filesToCheck, skipped := gofiles.Collect(paths)
+	report.Skipped = append(report.Skipped, skipped...)
 
 	// Check each collected file
 	for _, filePath := range filesToCheck {
