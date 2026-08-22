@@ -59,7 +59,7 @@ func TestCheck_MissingGoModReturnsError(t *testing.T) {
 		t.Fatalf("failed to chdir: %v", err)
 	}
 
-	_, err = Check([]string{"."}, 6.0)
+	_, err = Check([]string{"."}, 6.0, Options{})
 	if err == nil {
 		t.Errorf("expected error when go.mod is missing")
 	}
@@ -100,7 +100,7 @@ func TestF(t *testing.T) {
 		t.Fatalf("failed to write main_test.go: %v", err)
 	}
 
-	_, err = Check([]string{"."}, 6.0)
+	_, err = Check([]string{"."}, 6.0, Options{})
 	if err == nil {
 		t.Errorf("expected error when go test fails to build")
 	}
@@ -146,7 +146,7 @@ func TestAdd(t *testing.T) {
 	}
 
 	// Check should succeed (with the partial coverage)
-	report, err := Check([]string{"."}, 6.0)
+	report, err := Check([]string{"."}, 6.0, Options{})
 	if err != nil {
 		t.Errorf("expected no error even with test failure: %v", err)
 	}
@@ -194,7 +194,7 @@ func ComplexFunc(x int) string {
 	}
 
 	// Check with a low threshold
-	report, err := Check([]string{"."}, 1.0)
+	report, err := Check([]string{"."}, 1.0, Options{})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -228,5 +228,104 @@ func ComplexFunc(x int) string {
 
 	if !found {
 		t.Errorf("expected ComplexFunc in violations, got: %v", report.Violations)
+	}
+}
+
+func TestCheck_ExcludeFileSkipsFileAndReportsWhenDebug(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer os.Chdir(oldCwd)
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	// Write a go.mod file
+	if err := os.WriteFile("go.mod", []byte("module fixture\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Write main.go with a complex untested function
+	if err := os.WriteFile("main.go", []byte(`package main
+func ComplexFunc() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`), 0644); err != nil {
+		t.Fatalf("failed to write main.go: %v", err)
+	}
+
+	// Write main_test.go to satisfy go test
+	if err := os.WriteFile("main_test.go", []byte(`package main
+import "testing"
+func TestDummy(t *testing.T) {}
+`), 0644); err != nil {
+		t.Fatalf("failed to write main_test.go: %v", err)
+	}
+
+	// Run with exclude-file debug on
+	report, err := Check([]string{"."}, 6.0, Options{
+		ExcludeFiles: []string{"main.go"},
+		Debug:        true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.ExcludedFiles) != 1 {
+		t.Errorf("expected 1 excluded file when debug=true, got %d", len(report.ExcludedFiles))
+	}
+}
+
+func TestCheck_ExcludedItemsHiddenUnlessDebug(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer os.Chdir(oldCwd)
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	// Write a go.mod file
+	if err := os.WriteFile("go.mod", []byte("module fixture\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Write main.go with a complex untested function
+	if err := os.WriteFile("main.go", []byte(`package main
+func ComplexFunc() {
+	if true { if true { if true { if true { if true { } } } } }
+}
+`), 0644); err != nil {
+		t.Fatalf("failed to write main.go: %v", err)
+	}
+
+	// Write main_test.go
+	if err := os.WriteFile("main_test.go", []byte(`package main
+import "testing"
+func TestDummy(t *testing.T) {}
+`), 0644); err != nil {
+		t.Fatalf("failed to write main_test.go: %v", err)
+	}
+
+	// Run with exclude-file debug off
+	report, err := Check([]string{"."}, 6.0, Options{
+		ExcludeFiles: []string{"main.go"},
+		Debug:        false,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.ExcludedFiles) != 0 {
+		t.Errorf("expected 0 excluded files when debug=false, got %d", len(report.ExcludedFiles))
+	}
+	if len(report.ExcludedFuncs) != 0 {
+		t.Errorf("expected 0 excluded funcs when debug=false, got %d", len(report.ExcludedFuncs))
 	}
 }

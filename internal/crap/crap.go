@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -26,9 +27,24 @@ type Violation struct {
 
 type SkippedFile = gofiles.SkippedFile
 
+type ExcludedFunc struct {
+	File   string `json:"file"`
+	Line   int    `json:"line"`
+	Func   string `json:"func"`
+	Reason string `json:"reason"`
+}
+
+type Options struct {
+	ExcludeFiles []string
+	ExcludeFuncs []string
+	Debug        bool
+}
+
 type Report struct {
-	Violations []Violation  `json:"violations"`
-	Skipped    []SkippedFile `json:"skipped"`
+	Violations    []Violation    `json:"violations"`
+	Skipped       []SkippedFile  `json:"skipped"`
+	ExcludedFiles []string       `json:"excludedFiles"`
+	ExcludedFuncs []ExcludedFunc `json:"excludedFuncs"`
 }
 
 // crapScore calculates the CRAP score using the formula:
@@ -48,6 +64,29 @@ func evaluate(comp int, cov float64, threshold float64) (score float64, violated
 	score = crapScore(comp, cov)
 	violated = score > threshold
 	return
+}
+
+// excludeFuncReason checks if a function should be excluded based on name patterns or comment directives.
+// Returns (excluded, reason) where reason is one of: "flag", "comment", or "" (if not excluded).
+func excludeFuncReason(fn *ast.FuncDecl, patterns []string) (bool, string) {
+	// Check if function name matches any exclude pattern
+	for _, p := range patterns {
+		if match, _ := path.Match(p, fn.Name.Name); match {
+			return true, "flag"
+		}
+	}
+
+	// Check for // gardener:ignore comment directive
+	if fn.Doc != nil {
+		for _, comment := range fn.Doc.List {
+			text := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
+			if text == "gardener:ignore" {
+				return true, "comment"
+			}
+		}
+	}
+
+	return false, ""
 }
 
 // findModule walks upward from startDir looking for a go.mod file.
@@ -83,12 +122,14 @@ func findModule(startDir string) (root, modulePath string, err error) {
 // Check scans the provided paths for Go source files and calculates their CRAP scores.
 // It returns a report of all functions exceeding the threshold, or an error if
 // the go.mod file is missing or go test fails to build.
-func Check(paths []string, threshold float64) (Report, error) {
+func Check(paths []string, threshold float64, opts Options) (Report, error) {
 	assertf(threshold > 0, "threshold must be positive, got %v", threshold)
 
 	report := Report{
-		Violations: []Violation{},
-		Skipped:    []SkippedFile{},
+		Violations:    []Violation{},
+		Skipped:       []SkippedFile{},
+		ExcludedFiles: []string{},
+		ExcludedFuncs: []ExcludedFunc{},
 	}
 
 	// Find the module root and module path
@@ -130,13 +171,16 @@ func Check(paths []string, threshold float64) (Report, error) {
 	}
 
 	// Collect source files
-	filesToCheck, skipped := gofiles.Collect(paths)
+	filesToCheck, excludedFiles, skipped := gofiles.Collect(paths, opts.ExcludeFiles)
 	report.Skipped = append(report.Skipped, skipped...)
+	if opts.Debug {
+		report.ExcludedFiles = append(report.ExcludedFiles, excludedFiles...)
+	}
 
 	// Scan each source file
 	for _, filePath := range filesToCheck {
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filePath, nil, 0)
+		file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 		if err != nil {
 			report.Skipped = append(report.Skipped, gofiles.SkippedFile{
 				File:  filePath,
@@ -170,6 +214,20 @@ func Check(paths []string, threshold float64) (Report, error) {
 			// Get function position
 			startLine := fset.Position(fn.Body.Pos()).Line
 			endLine := fset.Position(fn.Body.End()).Line
+
+			// Check if function is excluded
+			excluded, reason := excludeFuncReason(fn, opts.ExcludeFuncs)
+			if excluded {
+				if opts.Debug {
+					report.ExcludedFuncs = append(report.ExcludedFuncs, ExcludedFunc{
+						File:   filePath,
+						Line:   startLine,
+						Func:   fn.Name.Name,
+						Reason: reason,
+					})
+				}
+				continue
+			}
 
 			// Calculate complexity and coverage
 			comp := cyclomaticComplexity(fn)

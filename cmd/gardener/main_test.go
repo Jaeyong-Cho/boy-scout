@@ -579,3 +579,150 @@ func CleanFunc() {
 		})
 	}
 }
+
+func TestRun_ExcludeFlagsFilterFunclenOutput(t *testing.T) {
+	// Create foo.go (105 lines - violation) and foo_test.go (105 lines - also violation)
+	tmpDir := t.TempDir()
+
+	fooSrc := "package main\nfunc Foo() {\n"
+	for i := 0; i < 103; i++ {
+		fooSrc += fmt.Sprintf("\t_ = %d\n", i)
+	}
+	fooSrc += "}\n"
+
+	testSrc := "package main\nfunc TestFoo() {\n"
+	for i := 0; i < 103; i++ {
+		testSrc += fmt.Sprintf("\t_ = %d\n", i)
+	}
+	testSrc += "}\n"
+
+	if err := os.WriteFile(tmpDir+"/foo.go", []byte(fooSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(tmpDir+"/foo_test.go", []byte(testSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"funclen", "--exclude-file=*_test.go", "--exclude-func=Foo", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	// Should have zero violations (Foo excluded by func, TestFoo excluded by file)
+	if strings.Contains(output, "Foo is 105 lines") || strings.Contains(output, "TestFoo is 105 lines") {
+		t.Errorf("expected no violations in output, got:\n%s", output)
+	}
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 (no violations), got %d", exitCode)
+	}
+}
+
+func TestRun_MalformedExcludePatternExitsWithUsageError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a simple file
+	if err := os.WriteFile(tmpDir+"/main.go", []byte("package main\nfunc F() { x := 1 }\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"funclen", "--exclude-file=[", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	stderr := stderrBuf.String()
+	if !strings.Contains(stderr, "error") || !strings.Contains(stderr, "invalid exclude pattern") {
+		t.Errorf("expected error message about invalid pattern, got:\n%s", stderr)
+	}
+
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2 (usage error), got %d", exitCode)
+	}
+}
+
+func TestRun_DebugFlagShowsExcludedFilesAndFuncs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create foo_test.go (105 lines - will be excluded)
+	testSrc := "package main\nfunc TestFoo() {\n"
+	for i := 0; i < 103; i++ {
+		testSrc += fmt.Sprintf("\t_ = %d\n", i)
+	}
+	testSrc += "}\n"
+
+	if err := os.WriteFile(tmpDir+"/foo_test.go", []byte(testSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"funclen", "--exclude-file=*_test.go", "--debug", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	// Should mention the excluded file
+	if !strings.Contains(output, "excluded file") || !strings.Contains(output, "foo_test.go") {
+		t.Errorf("expected 'excluded file' mention with --debug, got:\n%s", output)
+	}
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+}
+
+func TestRun_AllRespectsExcludeFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a 105-line function in foo.go
+	fooSrc := "package main\nfunc Foo() {\n"
+	for i := 0; i < 103; i++ {
+		fooSrc += fmt.Sprintf("\t_ = %d\n", i)
+	}
+	fooSrc += "}\n"
+
+	if err := os.WriteFile(tmpDir+"/foo.go", []byte(fooSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"all", "--exclude-func=Foo", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	// Should have no violations from funclen (Foo excluded)
+	if strings.Contains(output, "[funclen] foo.go") && strings.Contains(output, "Foo is 105 lines") {
+		t.Errorf("expected funclen violation to be excluded, got:\n%s", output)
+	}
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 (no violations), got %d", exitCode)
+	}
+}
+
+func TestRun_ExcludedViolationsDoNotAffectExitCode(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a 105-line function (would violate if not excluded)
+	src := "package main\nfunc Long() {\n"
+	for i := 0; i < 103; i++ {
+		src += fmt.Sprintf("\t_ = %d\n", i)
+	}
+	src += "}\n"
+
+	if err := os.WriteFile(tmpDir+"/long.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	// Exclude the function so there are zero real violations
+	exitCode := run([]string{"funclen", "--exclude-func=Long", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	// Exit code should be 0 (clean) even though a real violation was excluded
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 (excluded violation doesn't count), got %d", exitCode)
+	}
+}

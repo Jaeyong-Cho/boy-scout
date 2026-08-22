@@ -22,7 +22,7 @@ func Foo() {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
-	report, err := funclen.Check([]string{tmpFile}, 100)
+	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestCheck_ReportsViolationOverLimit(t *testing.T) {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
-	report, err := funclen.Check([]string{tmpFile}, 100)
+	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestCheck_ExactlyAtLimitIsCompliant(t *testing.T) {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
-	report, err := funclen.Check([]string{tmpFile}, 100)
+	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestCheck_WalksDirectoryRecursivelySkippingVendorAndDotDirs(t *testing.T) {
 		t.Fatalf("WriteFile d.go failed: %v", err)
 	}
 
-	report, err := funclen.Check([]string{tmpDir}, 100)
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestCheck_WalksDirectoryRecursivelySkippingVendorAndDotDirs(t *testing.T) {
 func TestCheck_EmptyDirectoryProducesEmptyReport(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	report, err := funclen.Check([]string{tmpDir}, 100)
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -249,7 +249,7 @@ func broken( {
 		t.Fatalf("WriteFile bad.go failed: %v", err)
 	}
 
-	report, err := funclen.Check([]string{tmpDir}, 100)
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{})
 	if err != nil {
 		t.Fatalf("Check should not return error, got: %v", err)
 	}
@@ -269,5 +269,215 @@ func broken( {
 	}
 	if report.Skipped[0].Error == "" {
 		t.Errorf("expected skipped file to have error message")
+	}
+}
+
+func TestCheck_ExcludeFileSkipsFileAndReportsWhenDebug(t *testing.T) {
+	// Create foo.go with a violation and foo_test.go with a violation
+	tmpDir := t.TempDir()
+
+	fooLines := []string{"package main", "", "func Foo() {"}
+	for i := 0; i < 103; i++ {
+		fooLines = append(fooLines, "\tx := 1")
+	}
+	fooLines = append(fooLines, "}")
+	fooSrc := strings.Join(fooLines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/foo.go", []byte(fooSrc), 0644); err != nil {
+		t.Fatalf("WriteFile foo.go failed: %v", err)
+	}
+
+	testLines := []string{"package main", "", "func TestFoo() {"}
+	for i := 0; i < 103; i++ {
+		testLines = append(testLines, "\tx := 1")
+	}
+	testLines = append(testLines, "}")
+	testSrc := strings.Join(testLines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/foo_test.go", []byte(testSrc), 0644); err != nil {
+		t.Fatalf("WriteFile foo_test.go failed: %v", err)
+	}
+
+	// With debug on, excluded files should appear
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+		ExcludeFiles: []string{"*_test.go"},
+		Debug:        true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(report.Violations))
+	}
+	if report.Violations[0].Func != "Foo" {
+		t.Errorf("expected violation for Foo, got %q", report.Violations[0].Func)
+	}
+
+	if len(report.ExcludedFiles) != 1 {
+		t.Errorf("expected 1 excluded file when debug=true, got %d", len(report.ExcludedFiles))
+	}
+}
+
+func TestCheck_ExcludedItemsHiddenUnlessDebug(t *testing.T) {
+	// Create foo.go with a violation
+	tmpDir := t.TempDir()
+
+	fooLines := []string{"package main", "", "func Foo() {"}
+	for i := 0; i < 103; i++ {
+		fooLines = append(fooLines, "\tx := 1")
+	}
+	fooLines = append(fooLines, "}")
+	fooSrc := strings.Join(fooLines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/foo.go", []byte(fooSrc), 0644); err != nil {
+		t.Fatalf("WriteFile foo.go failed: %v", err)
+	}
+
+	testLines := []string{"package main", "", "func TestFoo() {"}
+	for i := 0; i < 103; i++ {
+		testLines = append(testLines, "\tx := 1")
+	}
+	testLines = append(testLines, "}")
+	testSrc := strings.Join(testLines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/foo_test.go", []byte(testSrc), 0644); err != nil {
+		t.Fatalf("WriteFile foo_test.go failed: %v", err)
+	}
+
+	// With debug off, excluded files should NOT appear
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+		ExcludeFiles: []string{"*_test.go"},
+		Debug:        false,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.ExcludedFiles) != 0 {
+		t.Errorf("expected 0 excluded files when debug=false, got %d", len(report.ExcludedFiles))
+	}
+	if len(report.ExcludedFuncs) != 0 {
+		t.Errorf("expected 0 excluded funcs when debug=false, got %d", len(report.ExcludedFuncs))
+	}
+}
+
+func TestCheck_ExcludeFuncByNamePattern(t *testing.T) {
+	// Create TestHelper function (short) and TestRealFunc (long)
+	tmpDir := t.TempDir()
+
+	// TestHelper is short (no violation)
+	src := `package main
+
+func TestHelper() {
+	x := 1
+}
+
+func TestRealFunc() {
+`
+	// Make TestRealFunc 105 lines
+	for i := 0; i < 103; i++ {
+		src += "\tx := 1\n"
+	}
+	src += "}\n"
+
+	if err := os.WriteFile(tmpDir+"/test.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Exclude Test* pattern - both TestHelper and TestRealFunc should match
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+		ExcludeFuncs: []string{"Test*"},
+		Debug:        true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("expected 0 violations with exclude pattern, got %d", len(report.Violations))
+	}
+
+	// Should have 2 excluded funcs (both Test*)
+	if len(report.ExcludedFuncs) != 2 {
+		t.Errorf("expected 2 excluded funcs, got %d", len(report.ExcludedFuncs))
+	}
+
+	// Check that both have reason="flag"
+	for _, exc := range report.ExcludedFuncs {
+		if exc.Reason != "flag" {
+			t.Errorf("expected reason=flag, got %q", exc.Reason)
+		}
+	}
+}
+
+func TestCheck_ExcludeFuncByCommentDirective(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	lines := []string{"package main", "", "// gardener:ignore", "func Foo() {"}
+	// Make it 105 lines
+	for i := 0; i < 103; i++ {
+		lines = append(lines, "\tx := 1")
+	}
+	lines = append(lines, "}")
+	src := strings.Join(lines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/test.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+		Debug: true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("expected 0 violations with comment directive, got %d", len(report.Violations))
+	}
+
+	if len(report.ExcludedFuncs) != 1 {
+		t.Errorf("expected 1 excluded func, got %d", len(report.ExcludedFuncs))
+	}
+
+	if report.ExcludedFuncs[0].Reason != "comment" {
+		t.Errorf("expected reason=comment, got %q", report.ExcludedFuncs[0].Reason)
+	}
+	if report.ExcludedFuncs[0].Func != "Foo" {
+		t.Errorf("expected Func=Foo, got %q", report.ExcludedFuncs[0].Func)
+	}
+}
+
+func TestCheck_CommentDirectiveTypoIsNotExcluded(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Typo: missing colon
+	lines := []string{"package main", "", "// gardenerignore", "func Foo() {"}
+	// Make it 105 lines
+	for i := 0; i < 103; i++ {
+		lines = append(lines, "\tx := 1")
+	}
+	lines = append(lines, "}")
+	src := strings.Join(lines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/test.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+		Debug: true,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Should have 1 violation because typo is not recognized
+	if len(report.Violations) != 1 {
+		t.Errorf("expected 1 violation (typo not recognized), got %d", len(report.Violations))
+	}
+
+	if len(report.ExcludedFuncs) != 0 {
+		t.Errorf("expected 0 excluded funcs with typo, got %d", len(report.ExcludedFuncs))
 	}
 }

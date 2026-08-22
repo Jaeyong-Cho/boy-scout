@@ -18,11 +18,29 @@ func assertf(cond bool, format string, args ...any) {
 	}
 }
 
+// matchesExclude returns true if path matches any exclude pattern by full path or basename.
+func matchesExclude(path string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+	basename := filepath.Base(path)
+	for _, p := range patterns {
+		if match, _ := filepath.Match(p, path); match {
+			return true
+		}
+		if match, _ := filepath.Match(p, basename); match {
+			return true
+		}
+	}
+	return false
+}
+
 // Collect walks the provided paths and returns a list of all .go files found,
-// skipping vendor/ and dot-directories. Returns two slices: files (the .go files)
-// and skipped (any files/directories that could not be processed).
-func Collect(paths []string) (files []string, skipped []SkippedFile) {
+// skipping vendor/ and dot-directories. Returns three slices: files (the .go files),
+// excluded (files matching excludePatterns), and skipped (any files/directories that could not be processed).
+func Collect(paths []string, excludePatterns []string) (files []string, excluded []string, skipped []SkippedFile) {
 	files = []string{}
+	excluded = []string{}
 	skipped = []SkippedFile{}
 
 	for _, path := range paths {
@@ -36,8 +54,12 @@ func Collect(paths []string) (files []string, skipped []SkippedFile) {
 		}
 
 		if !stat.IsDir() {
-			// It's a file, add it directly
-			files = append(files, path)
+			// It's a file, add it directly (or to excluded if it matches)
+			if matchesExclude(path, excludePatterns) {
+				excluded = append(excluded, path)
+			} else {
+				files = append(files, path)
+			}
 		} else {
 			// It's a directory, walk it
 			err := filepath.WalkDir(path, func(filePath string, d os.DirEntry, err error) error {
@@ -57,7 +79,11 @@ func Collect(paths []string) (files []string, skipped []SkippedFile) {
 
 				// Check if it's a .go file
 				if strings.HasSuffix(filePath, ".go") {
-					files = append(files, filePath)
+					if matchesExclude(filePath, excludePatterns) {
+						excluded = append(excluded, filePath)
+					} else {
+						files = append(files, filePath)
+					}
 				}
 
 				return nil
@@ -72,5 +98,5 @@ func Collect(paths []string) (files []string, skipped []SkippedFile) {
 		}
 	}
 
-	return files, skipped
+	return files, excluded, skipped
 }
