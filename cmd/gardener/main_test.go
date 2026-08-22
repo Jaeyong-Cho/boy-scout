@@ -12,7 +12,7 @@ import (
 )
 
 // cppFuncLenFillerLines returns n valid, uniquely-named C++ declaration
-// lines used to pad a function body past the funclen limit in tests.
+// lines used to pad a function body past the gofunclen limit in tests.
 func cppFuncLenFillerLines(n int) string {
 	var b strings.Builder
 	for i := 0; i < n; i++ {
@@ -60,9 +60,9 @@ type funcViolation struct {
 }
 
 type allReport struct {
-	Funclen struct {
+	Gofunclen struct {
 		Violations []funcViolation `json:"violations"`
-	} `json:"funclen"`
+	} `json:"gofunclen"`
 	Crap struct {
 		Violations []funcViolation `json:"violations"`
 	} `json:"crap"`
@@ -105,7 +105,7 @@ func TestRun_TextFormatMatchesExpectedLine(t *testing.T) {
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "funclen", tmpFile}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen", tmpFile}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
 
@@ -126,7 +126,7 @@ func TestRun_TextFormatMatchesExpectedLine(t *testing.T) {
 	}
 }
 
-func TestRun_FunclenRespectsMaxLinesFlag(t *testing.T) {
+func TestRun_GofunclenRespectsMaxLinesFlag(t *testing.T) {
 	// Create a file with a 60-line function
 	lines := []string{"package main", "", "func Moderate() {"}
 	for i := 0; i < 58; i++ {
@@ -142,7 +142,7 @@ func TestRun_FunclenRespectsMaxLinesFlag(t *testing.T) {
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "funclen", "--max-lines=50", tmpFile}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen", "--max-lines=50", tmpFile}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
 
@@ -156,7 +156,7 @@ func TestRun_FunclenRespectsMaxLinesFlag(t *testing.T) {
 	}
 }
 
-func TestRun_FunclenDefaultsToCurrentDir(t *testing.T) {
+func TestRun_GofunclenDefaultsToCurrentDir(t *testing.T) {
 	// Create a temp dir with a violating file
 	tmpDir := t.TempDir()
 
@@ -192,7 +192,7 @@ func TestRun_FunclenDefaultsToCurrentDir(t *testing.T) {
 	})
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "funclen"}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen"}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
 	stderr := stderrBuf.String()
@@ -210,7 +210,7 @@ func TestRun_JSONFormatOutputsValidSchema(t *testing.T) {
 	tmpFile := writeGoFile(t, tmpDir, "viol.go", longFuncSrc("main", "Violating", 105))
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "funclen", "--format=json", tmpFile}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen", "--format=json", tmpFile}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
 
@@ -280,7 +280,7 @@ func TestRun_ExitCodeReflectsOutcome(t *testing.T) {
 			}
 
 			var stdoutBuf, stderrBuf bytes.Buffer
-			exitCode := run([]string{"go", "funclen", tmpDir}, &stdoutBuf, &stderrBuf)
+			exitCode := run([]string{"go", "gofunclen", tmpDir}, &stdoutBuf, &stderrBuf)
 
 			if exitCode != tc.expectedCode {
 				t.Errorf("expected exit code %d, got %d", tc.expectedCode, exitCode)
@@ -361,7 +361,7 @@ func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 	output := stdoutBuf.String()
 	stderr := stderrBuf.String()
 	if !strings.Contains(output, "ViolatingFunc is 105 lines (limit 50)") {
-		t.Errorf("expected funclen violation in 'all' output, got:\nstdout: %s\nstderr: %s", output, stderr)
+		t.Errorf("expected gofunclen violation in 'all' output, got:\nstdout: %s\nstderr: %s", output, stderr)
 	}
 
 	if exitCode != 1 {
@@ -519,12 +519,12 @@ func ComplexFunc(x int) string {
 	}
 }
 
-func TestRun_AllCombinesFunclenAndCrap(t *testing.T) {
-	// Create a file with both funclen and crap violations
+func TestRun_AllCombinesGofunclenAndCrap(t *testing.T) {
+	// Create a file with both gofunclen and crap violations
 	src := `package main
 func ViolatingFunc() {
 `
-	// Add 105 lines to violate funclen
+	// Add 105 lines to violate gofunclen
 	for i := 0; i < 103; i++ {
 		src += fmt.Sprintf("\t_ = %d\n", i)
 	}
@@ -556,9 +556,9 @@ func ViolatingFunc() {
 	exitCode := run([]string{"go", "all", "."}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
-	// Should have both funclen and crap violations
-	if !strings.Contains(output, "[funclen]") {
-		t.Errorf("expected '[funclen]' in output, got:\n%s", output)
+	// Should have both gofunclen and crap violations
+	if !strings.Contains(output, "[gofunclen]") {
+		t.Errorf("expected '[gofunclen]' in output, got:\n%s", output)
 	}
 	if !strings.Contains(output, "[crap]") {
 		t.Errorf("expected '[crap]' in output, got:\n%s", output)
@@ -591,15 +591,15 @@ func CleanFunc() {
 `
 
 // writeAllCheckFixtures writes source files into dir that produce the requested
-// combination of funclen/crap violations for the "all" subcommand.
-func writeAllCheckFixtures(t *testing.T, dir string, funclenViolating, crapViolating bool) {
-	if funclenViolating {
+// combination of gofunclen/crap violations for the "all" subcommand.
+func writeAllCheckFixtures(t *testing.T, dir string, gofunclenViolating, crapViolating bool) {
+	if gofunclenViolating {
 		writeGoFile(t, dir, "long.go", longFuncSrc("main", "LongFunc", 105))
 	}
 	if crapViolating {
 		writeGoFile(t, dir, "complex.go", complexFuncSrc)
 	}
-	if !funclenViolating && !crapViolating {
+	if !gofunclenViolating && !crapViolating {
 		writeGoFile(t, dir, "clean.go", cleanFuncSrc)
 	}
 }
@@ -607,12 +607,12 @@ func writeAllCheckFixtures(t *testing.T, dir string, funclenViolating, crapViola
 func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
 	testCases := []struct {
 		name             string
-		funclenViolating bool
+		gofunclenViolating bool
 		crapViolating    bool
 		expectedExitCode int
 	}{
 		{"both clean", false, false, 0},
-		{"only funclen violated", true, false, 1},
+		{"only gofunclen violated", true, false, 1},
 		{"only crap violated", false, true, 1},
 		{"both violated", true, true, 1},
 	}
@@ -620,7 +620,7 @@ func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			writeAllCheckFixtures(t, tmpDir, tc.funclenViolating, tc.crapViolating)
+			writeAllCheckFixtures(t, tmpDir, tc.gofunclenViolating, tc.crapViolating)
 			initModule(t, tmpDir)
 
 			var stdoutBuf, stderrBuf bytes.Buffer
@@ -633,7 +633,7 @@ func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
 	}
 }
 
-func TestRun_ExcludeFlagsFilterFunclenOutput(t *testing.T) {
+func TestRun_ExcludeFlagsFilterGofunclenOutput(t *testing.T) {
 	// Create foo.go (105 lines - violation) and foo_test.go (105 lines - also violation)
 	tmpDir := t.TempDir()
 
@@ -657,7 +657,7 @@ func TestRun_ExcludeFlagsFilterFunclenOutput(t *testing.T) {
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "funclen", "--exclude-file=*_test.go", "--exclude-func=Foo", tmpDir}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen", "--exclude-file=*_test.go", "--exclude-func=Foo", tmpDir}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
 	// Should have zero violations (Foo excluded by func, TestFoo excluded by file)
@@ -679,7 +679,7 @@ func TestRun_MalformedExcludePatternExitsWithUsageError(t *testing.T) {
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "funclen", "--exclude-file=[", tmpDir}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen", "--exclude-file=[", tmpDir}, &stdoutBuf, &stderrBuf)
 
 	stderr := stderrBuf.String()
 	if !strings.Contains(stderr, "error") || !strings.Contains(stderr, "invalid exclude pattern") {
@@ -706,7 +706,7 @@ func TestRun_DebugFlagShowsExcludedFilesAndFuncs(t *testing.T) {
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "funclen", "--exclude-file=*_test.go", "--debug", tmpDir}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen", "--exclude-file=*_test.go", "--debug", tmpDir}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
 	// Should mention the excluded file
@@ -746,9 +746,9 @@ func TestRun_AllRespectsExcludeFlags(t *testing.T) {
 	exitCode := run([]string{"go", "all", "--exclude-func=Foo", "."}, &stdoutBuf, &stderrBuf)
 
 	output := stdoutBuf.String()
-	// Should have no violations from funclen (Foo excluded)
-	if strings.Contains(output, "[funclen] foo.go") && strings.Contains(output, "Foo is 105 lines") {
-		t.Errorf("expected funclen violation to be excluded, got:\n%s", output)
+	// Should have no violations from gofunclen (Foo excluded)
+	if strings.Contains(output, "[gofunclen] foo.go") && strings.Contains(output, "Foo is 105 lines") {
+		t.Errorf("expected gofunclen violation to be excluded, got:\n%s", output)
 	}
 
 	if exitCode != 0 {
@@ -772,7 +772,7 @@ func TestRun_ExcludedViolationsDoNotAffectExitCode(t *testing.T) {
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	// Exclude the function so there are zero real violations
-	exitCode := run([]string{"go", "funclen", "--exclude-func=Long", tmpDir}, &stdoutBuf, &stderrBuf)
+	exitCode := run([]string{"go", "gofunclen", "--exclude-func=Long", tmpDir}, &stdoutBuf, &stderrBuf)
 
 	// Exit code should be 0 (clean) even though a real violation was excluded
 	if exitCode != 0 {
@@ -922,7 +922,7 @@ func TestRun_SetupWriteFailureExitsTwo(t *testing.T) {
 }
 
 func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
-	// Create a fixture with a function long enough for funclen (105 lines)
+	// Create a fixture with a function long enough for gofunclen (105 lines)
 	// and complex enough for crap (5 nested ifs = complexity 5, with no coverage = score = 5^2*(1-0)^3 + 5 = 30, way above 6.0 threshold)
 	src := "package main\n\n// gardener:ignore:crap\nfunc ViolatingFunc() {\n"
 	for i := 0; i < 100; i++ {
@@ -936,9 +936,9 @@ func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
 
 	report, exitCode := runAllJSON(t)
 
-	// funclen should report ViolatingFunc (directive doesn't name funclen)
-	if !hasViolation(report.Funclen.Violations, "ViolatingFunc") {
-		t.Errorf("expected ViolatingFunc in funclen violations, got %v", report.Funclen.Violations)
+	// funclen should report ViolatingFunc (directive doesn't name gofunclen)
+	if !hasViolation(report.Gofunclen.Violations, "ViolatingFunc") {
+		t.Errorf("expected ViolatingFunc in funclen violations, got %v", report.Gofunclen.Violations)
 	}
 
 	// crap should NOT report ViolatingFunc (directive names crap, so it's excluded)
@@ -946,7 +946,7 @@ func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
 		t.Errorf("expected ViolatingFunc NOT in crap violations, but found it")
 	}
 
-	// Exit code should be 1 (violation from funclen)
+	// Exit code should be 1 (violation from gofunclen)
 	if exitCode != 1 {
 		t.Errorf("expected exit code 1, got %d", exitCode)
 	}
@@ -1019,7 +1019,7 @@ func chdirTemp() {
 
 	initModule(t, tmpDir)
 
-	// Run "all" with JSON format (uses default thresholds: funclen=50, crap=6.0)
+	// Run "all" with JSON format (uses default thresholds: gofunclen=50, crap=6.0)
 	report, exitCode := runAllJSON(t)
 
 	if hasViolation(report.Crap.Violations, "chdirTemp") {

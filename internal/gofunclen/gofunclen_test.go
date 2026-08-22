@@ -1,4 +1,4 @@
-package funclen_test
+package gofunclen_test
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gardener-go/internal/funclen"
+	"gardener-go/internal/gofunclen"
 )
 
 // writeFile writes content to path, failing the test on error.
@@ -44,7 +44,7 @@ func Foo() {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
-	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
+	report, err := gofunclen.Check([]string{tmpFile}, 100, gofunclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestCheck_ReportsViolationOverLimit(t *testing.T) {
 	tmpFile := tmpDir + "/long.go"
 	writeFile(t, tmpFile, src)
 
-	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
+	report, err := gofunclen.Check([]string{tmpFile}, 100, gofunclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCheck_ExactlyAtLimitIsCompliant(t *testing.T) {
 	tmpFile := tmpDir + "/exact.go"
 	writeFile(t, tmpFile, funcSrc("Exactly100", 98))
 
-	report, err := funclen.Check([]string{tmpFile}, 100, funclen.Options{})
+	report, err := gofunclen.Check([]string{tmpFile}, 100, gofunclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestCheck_WalksDirectoryRecursivelySkippingVendorAndDotDirs(t *testing.T) {
 		writeFile(t, filepath.Join(dir, fx.file), funcSrc(fx.fn, 103))
 	}
 
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{})
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCheck_WalksDirectoryRecursivelySkippingVendorAndDotDirs(t *testing.T) {
 func TestCheck_EmptyDirectoryProducesEmptyReport(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{})
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -187,7 +187,7 @@ func broken( {
 		t.Fatalf("WriteFile bad.go failed: %v", err)
 	}
 
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{})
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{})
 	if err != nil {
 		t.Fatalf("Check should not return error, got: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestCheck_ExcludeFileSkipsFileAndReportsWhenDebug(t *testing.T) {
 	writeFile(t, tmpDir+"/foo_test.go", funcSrc("TestFoo", 103))
 
 	// With debug on, excluded files should appear
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		ExcludeFiles: []string{"*_test.go"},
 		Debug:        true,
 	})
@@ -246,7 +246,7 @@ func TestCheck_ExcludedItemsHiddenUnlessDebug(t *testing.T) {
 	writeFile(t, tmpDir+"/foo_test.go", funcSrc("TestFoo", 103))
 
 	// With debug off, excluded files should NOT appear
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		ExcludeFiles: []string{"*_test.go"},
 		Debug:        false,
 	})
@@ -286,7 +286,7 @@ func TestRealFunc() {
 	}
 
 	// Exclude Test* pattern - both TestHelper and TestRealFunc should match
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		ExcludeFuncs: []string{"Test*"},
 		Debug:        true,
 	})
@@ -316,7 +316,7 @@ func TestCheck_ExcludeFuncByCommentDirective(t *testing.T) {
 
 	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore"))
 
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,
 	})
 	if err != nil {
@@ -345,7 +345,7 @@ func TestCheck_CommentDirectiveTypoIsNotExcluded(t *testing.T) {
 	// Typo: missing colon
 	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardenerignore"))
 
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,
 	})
 	if err != nil {
@@ -365,9 +365,9 @@ func TestCheck_CommentDirectiveTypoIsNotExcluded(t *testing.T) {
 func TestCheck_ExcludeFuncByCommentDirective_NamesThisChecker(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore:funclen"))
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore:gofunclen"))
 
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,
 	})
 	if err != nil {
@@ -375,7 +375,7 @@ func TestCheck_ExcludeFuncByCommentDirective_NamesThisChecker(t *testing.T) {
 	}
 
 	if len(report.Violations) != 0 {
-		t.Errorf("expected 0 violations with funclen-specific comment directive, got %d", len(report.Violations))
+		t.Errorf("expected 0 violations with gofunclen-specific comment directive, got %d", len(report.Violations))
 	}
 
 	if len(report.ExcludedFuncs) != 1 {
@@ -393,17 +393,17 @@ func TestCheck_ExcludeFuncByCommentDirective_NamesThisChecker(t *testing.T) {
 func TestCheck_ExcludeFuncByCommentDirective_NamesOtherCheckerOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Comment directive names only "crap", not "funclen"
+	// Comment directive names only "crap", not "gofunclen"
 	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore:crap"))
 
-	report, err := funclen.Check([]string{tmpDir}, 100, funclen.Options{
+	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,
 	})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
 
-	// Should have 1 violation because directive doesn't name funclen
+	// Should have 1 violation because directive doesn't name gofunclen
 	if len(report.Violations) != 1 {
 		t.Errorf("expected 1 violation (directive names other checker), got %d", len(report.Violations))
 	}
@@ -414,19 +414,19 @@ func TestCheck_ExcludeFuncByCommentDirective_NamesOtherCheckerOnly(t *testing.T)
 }
 
 func TestCheck_StillScoresTestFilesUnaffectedByCrapDefault(t *testing.T) {
-	// Regression test: funclen should still score functions in _test.go files
+	// Regression test: gofunclen should still score functions in _test.go files
 	// even though crap.Check now excludes them by default
 	tmpDir := t.TempDir()
 
 	// Create a _test.go file with a function exceeding the limit (55 lines > 50 default)
 	writeFile(t, tmpDir+"/helper_test.go", funcSrc("TestHelper", 53))
 
-	report, err := funclen.Check([]string{tmpDir}, 50, funclen.Options{})
+	report, err := gofunclen.Check([]string{tmpDir}, 50, gofunclen.Options{})
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
 
-	// funclen should still report the violation in the test file
+	// gofunclen should still report the violation in the test file
 	if len(report.Violations) != 1 {
 		t.Errorf("expected 1 violation for long function in _test.go, got %d", len(report.Violations))
 	}

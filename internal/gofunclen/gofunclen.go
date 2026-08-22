@@ -1,4 +1,4 @@
-package funclen
+package gofunclen
 
 import (
 	"fmt"
@@ -56,7 +56,7 @@ func evalFuncLen(fn *ast.FuncDecl, fset *token.FileSet, filePath string, maxLine
 	endLine := fset.Position(fn.Body.End()).Line
 	length := endLine - startLine + 1
 
-	if excluded, reason := funcignore.Reason(fn, opts.ExcludeFuncs, "funclen"); excluded {
+	if excluded, reason := funcignore.Reason(fn, opts.ExcludeFuncs, "gofunclen"); excluded {
 		if !opts.Debug {
 			return nil, nil
 		}

@@ -13,7 +13,7 @@ import (
 
 	"gardener-go/internal/cppfunclen"
 	"gardener-go/internal/crap"
-	"gardener-go/internal/funclen"
+	"gardener-go/internal/gofunclen"
 	"gardener-go/internal/setup"
 )
 
@@ -218,7 +218,7 @@ func excludePatternsFrom(excludeFile, excludeFunc string) (excludeFiles, exclude
 // langSubcommands maps each language to its subcommands.
 var langSubcommands = map[string]map[string]func(args []string, stdout, stderr io.Writer) int{
 	"go": {
-		"funclen": runGoFunclen,
+		"gofunclen": runGoFunclen,
 		"crap":    runGoCrap,
 		"all":     runGoAll,
 	},
@@ -269,7 +269,7 @@ func dispatchLang(lang string, args []string, stdout, stderr io.Writer) int {
 }
 
 func runGoFunclen(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("funclen", flag.ContinueOnError)
+	fs := flag.NewFlagSet("gofunclen", flag.ContinueOnError)
 	maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
 	format := fs.String("format", "text", "output format: text or json")
 	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
@@ -282,13 +282,13 @@ func runGoFunclen(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	opts := funclen.Options{
+	opts := gofunclen.Options{
 		ExcludeFiles: excludeFiles,
 		ExcludeFuncs: excludeFuncs,
 		Debug:        *debug,
 	}
 
-	report, err := funclen.Check(paths, *maxLines, opts)
+	report, err := gofunclen.Check(paths, *maxLines, opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
@@ -395,8 +395,8 @@ func renderCrapJSON(report crap.Report, stdout, stderr io.Writer) int {
 }
 
 type combinedReport struct {
-	Funclen funclen.Report `json:"funclen"`
-	Crap    crap.Report    `json:"crap"`
+	Gofunclen gofunclen.Report `json:"gofunclen"`
+	Crap      crap.Report      `json:"crap"`
 }
 
 func runGoAll(args []string, stdout, stderr io.Writer) int {
@@ -412,15 +412,15 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	funclenReport, crapReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	gofunclenReport, crapReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
 
 	combined := combinedReport{
-		Funclen: funclenReport,
-		Crap:    crapReport,
+		Gofunclen: gofunclenReport,
+		Crap:      crapReport,
 	}
 
 	// Render output
@@ -430,9 +430,9 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	return renderAllText(combined, stdout, stderr)
 }
 
-// checkAll runs both the funclen and crap checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (funclen.Report, crap.Report, error) {
-	opts := funclen.Options{
+// checkAll runs both the gofunclen and crap checks with shared options.
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, error) {
+	opts := gofunclen.Options{
 		ExcludeFiles: excludeFiles,
 		ExcludeFuncs: excludeFuncs,
 		Debug:        debug,
@@ -443,25 +443,25 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 		Debug:        debug,
 	}
 
-	funclenReport, err := funclen.Check(paths, 50, opts)
+	gofunclenReport, err := gofunclen.Check(paths, 50, opts)
 	if err != nil {
-		return funclen.Report{}, crap.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, err
 	}
 
 	crapReport, err := crap.Check(paths, 6.0, crapOpts)
 	if err != nil {
-		return funclen.Report{}, crap.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, err
 	}
 
-	return funclenReport, crapReport, nil
+	return gofunclenReport, crapReport, nil
 }
 
 func renderAllText(report combinedReport, stdout, stderr io.Writer) int {
-	writeFunclenLines(stdout, "[funclen] ", report.Funclen)
+	writeGofunclenLines(stdout, "[gofunclen] ", report.Gofunclen)
 	writeCrapLines(stdout, "[crap] ", report.Crap)
 
-	totalViolations := len(report.Funclen.Violations) + len(report.Crap.Violations)
-	totalSkipped := len(report.Funclen.Skipped) + len(report.Crap.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -472,8 +472,8 @@ func renderAllJSON(report combinedReport, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "%s\n", string(data))
 
-	totalViolations := len(report.Funclen.Violations) + len(report.Crap.Violations)
-	totalSkipped := len(report.Funclen.Skipped) + len(report.Crap.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -567,9 +567,9 @@ func exitCodeFor(numViolations, numSkipped int) int {
 	return code
 }
 
-// writeFunclenLines writes a funclen report's violations and excluded entries to w,
-// each line prefixed with prefix (e.g. "[funclen] " when combined with other checks).
-func writeFunclenLines(w io.Writer, prefix string, report funclen.Report) {
+// writeGofunclenLines writes a gofunclen report's violations and excluded entries to w,
+// each line prefixed with prefix (e.g. "[gofunclen] " when combined with other checks).
+func writeGofunclenLines(w io.Writer, prefix string, report gofunclen.Report) {
 	for _, v := range report.Violations {
 		fmt.Fprintf(w, "%s%s:%d: function %s is %d lines (limit %d)\n",
 			prefix, v.File, v.Line, v.Func, v.Length, v.Limit)
@@ -583,12 +583,12 @@ func writeFunclenLines(w io.Writer, prefix string, report funclen.Report) {
 	}
 }
 
-func renderText(report funclen.Report, stdout, stderr io.Writer) int {
-	writeFunclenLines(stdout, "", report)
+func renderText(report gofunclen.Report, stdout, stderr io.Writer) int {
+	writeGofunclenLines(stdout, "", report)
 	return exitCodeFor(len(report.Violations), len(report.Skipped))
 }
 
-func renderJSON(report funclen.Report, stdout, stderr io.Writer) int {
+func renderJSON(report gofunclen.Report, stdout, stderr io.Writer) int {
 	data, err := json.Marshal(report)
 	assertf(err == nil, "json.Marshal failed: %v", err)
 
