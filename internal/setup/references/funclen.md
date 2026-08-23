@@ -4,7 +4,10 @@
 
 A function that's too large is doing more than one thing at one level of abstraction. It's mixing distinct concerns — setup, computation, cleanup, error handling, logging — that belong in separate steps. This forces readers to hold too much state in their head at once and makes it hard to test, reuse, or refactor individual steps without affecting others.
 
-**Related concept:** `meta-pattern.md` explains when code should stay together vs. split. A single function doing one thing well is a form of cohesion; when a function accumulates unrelated responsibilities, it's time to split.
+**Related concepts:** 
+- `functions.md` — The clean-code chapter on functions. Covers one-thing-per-function, abstraction levels, stepdown flow, and when to extract.
+- `meta-pattern.md` — explains when code should stay together vs. split. A single function doing one thing well is a form of cohesion; when a function accumulates unrelated responsibilities, it's time to split.
+- `naming.md` — good naming of extracted functions is essential; the name should say what each step does.
 
 ## How to fix it
 
