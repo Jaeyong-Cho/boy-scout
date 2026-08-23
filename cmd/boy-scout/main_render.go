@@ -83,6 +83,11 @@ func writeDuplicationLines(w io.Writer, prefix string, report duplication.Report
 				prefix, v.FileA, v.LineA, v.FuncA, v.Type, v.FileB, v.LineB, v.FuncB, v.DupLines)
 		}
 	}
+	// Write cluster summaries
+	for _, c := range report.Clusters {
+		fmt.Fprintf(w, "%s%d functions clustered as one duplicate group (%d duplicated lines total, cross-package: %t)\n",
+			prefix, len(c.Members), c.DupLines, c.CrossPackage)
+	}
 	for _, f := range report.ExcludedFiles {
 		fmt.Fprintf(w, "%sexcluded file: %s\n", prefix, f)
 	}

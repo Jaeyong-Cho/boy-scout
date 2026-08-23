@@ -1694,6 +1694,115 @@ func Duplicate2() error {
 	}
 }
 
+// TestRun_DuplicationJSONIncludesClustersField tests that the JSON output includes cluster grouping
+func TestRun_DuplicationJSONIncludesClustersField(t *testing.T) {
+	tmpDir := t.TempDir()
+	initModule(t, tmpDir)
+
+	// Create three mutually duplicated functions
+	// A and B are identical (Type-1), B and C have renamed identifiers (Type-2)
+	writeGoFile(t, tmpDir, "a.go", `package test
+
+func DuplicateA() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	writeGoFile(t, tmpDir, "b.go", `package test
+
+func DuplicateB() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	writeGoFile(t, tmpDir, "c.go", `package test
+
+func DuplicateC() error {
+	a := 1
+	b := 2
+	c := a + b
+	return nil
+}
+`)
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"go", "duplication", "--format=json", tmpDir}, &stdout, &stderr)
+
+	// Parse JSON with clusters field
+	type clusterJSON struct {
+		Members []struct {
+			File string `json:"file"`
+			Line int    `json:"line"`
+			Func string `json:"func"`
+		} `json:"members"`
+		Pairs []struct {
+			Type string `json:"type"`
+		} `json:"pairs"`
+		DupLines    int  `json:"dupLines"`
+		CrossPackage bool `json:"crossPackage"`
+	}
+
+	type duplicationReportJSON struct {
+		Violations []struct {
+			Type string `json:"type"`
+		} `json:"violations"`
+		Clusters []clusterJSON `json:"clusters"`
+	}
+
+	var report duplicationReportJSON
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	// Should have clusters field
+	if len(report.Clusters) == 0 {
+		t.Fatalf("expected clusters array in JSON output, got empty")
+	}
+
+	// Should have exactly 1 cluster
+	if len(report.Clusters) != 1 {
+		t.Errorf("expected 1 cluster, got %d", len(report.Clusters))
+	}
+
+	cluster := report.Clusters[0]
+
+	// Cluster should have 3 members
+	if len(cluster.Members) != 3 {
+		t.Errorf("expected 3 members in cluster, got %d", len(cluster.Members))
+	}
+
+	// Cluster should have 3 pairs (A-B, A-C, B-C)
+	if len(cluster.Pairs) != 3 {
+		t.Errorf("expected 3 pairs in cluster, got %d", len(cluster.Pairs))
+	}
+
+	// Pairs should include both Type-1 and Type-2
+	hasType1 := false
+	hasType2 := false
+	for _, pair := range cluster.Pairs {
+		if pair.Type == "Type-1" {
+			hasType1 = true
+		}
+		if pair.Type == "Type-2" {
+			hasType2 = true
+		}
+	}
+	if !hasType1 || !hasType2 {
+		t.Errorf("expected Type-1 and Type-2 pairs in cluster")
+	}
+
+	// Exit code should be 1
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
 // TestRun_DuplicationInvalidMinSimilarityErrors tests that invalid --min-similarity values cause an error
 func TestRun_DuplicationInvalidMinSimilarityErrors(t *testing.T) {
 	tmpDir := t.TempDir()

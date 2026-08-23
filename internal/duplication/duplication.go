@@ -16,6 +16,7 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
+	"path/filepath"
 	"strings"
 
 	"boy-scout/internal/funcignore"
@@ -32,6 +33,19 @@ type Violation struct {
 	Type       string  `json:"type"`       // "Type-1", "Type-2", or "Type-3"
 	DupLines   int     `json:"dupLines"`   // duplicated line count
 	Similarity float64 `json:"similarity"` // LCS-based similarity (Type-3 only)
+}
+
+type FuncRef struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Func string `json:"func"`
+}
+
+type Cluster struct {
+	Members     []FuncRef  `json:"members"`     // unique functions in the group, sorted by file then line
+	Pairs       []Violation `json:"pairs"`       // pairwise violations, each keeping its own Type
+	DupLines    int        `json:"dupLines"`    // sum of all Pairs[i].DupLines
+	CrossPackage bool       `json:"crossPackage"` // true when members span different directories
 }
 
 // SkippedFile is a type alias for srcfiles.SkippedFile
@@ -52,6 +66,7 @@ type Options struct {
 
 type Report struct {
 	Violations    []Violation
+	Clusters      []Cluster
 	Skipped       []SkippedFile
 	ExcludedFiles []string
 	ExcludedFuncs []ExcludedFunc
@@ -332,6 +347,154 @@ func scanFilesForFunctions(files []string, minLines int, opts Options, report *R
 	return allFuncs
 }
 
+// unionFind is a simple union-find (disjoint-set) implementation
+type unionFind struct {
+	parent map[string]string
+	rank   map[string]int
+}
+
+func newUnionFind() *unionFind {
+	return &unionFind{
+		parent: make(map[string]string),
+		rank:   make(map[string]int),
+	}
+}
+
+func (uf *unionFind) find(x string) string {
+	if _, exists := uf.parent[x]; !exists {
+		uf.parent[x] = x
+		uf.rank[x] = 0
+	}
+	if uf.parent[x] != x {
+		uf.parent[x] = uf.find(uf.parent[x]) // path compression
+	}
+	return uf.parent[x]
+}
+
+func (uf *unionFind) union(x, y string) {
+	rootX := uf.find(x)
+	rootY := uf.find(y)
+	if rootX == rootY {
+		return
+	}
+	// Union by rank
+	if uf.rank[rootX] < uf.rank[rootY] {
+		uf.parent[rootX] = rootY
+	} else if uf.rank[rootX] > uf.rank[rootY] {
+		uf.parent[rootY] = rootX
+	} else {
+		uf.parent[rootY] = rootX
+		uf.rank[rootX]++
+	}
+}
+
+// buildClusters groups violations into connected components using union-find,
+// keyed by file:line:func identity
+func buildClusters(violations []Violation) []Cluster {
+	if len(violations) == 0 {
+		return []Cluster{}
+	}
+
+	uf := newUnionFind()
+
+	// Build a map of all unique functions and union-find groups
+	funcMap := make(map[string]FuncRef)  // key: file:line:func, value: FuncRef
+	groupMembers := make(map[string][]string) // key: root, value: member keys
+
+	for _, v := range violations {
+		keyA := fmt.Sprintf("%s:%d:%s", v.FileA, v.LineA, v.FuncA)
+		keyB := fmt.Sprintf("%s:%d:%s", v.FileB, v.LineB, v.FuncB)
+
+		funcMap[keyA] = FuncRef{File: v.FileA, Line: v.LineA, Func: v.FuncA}
+		funcMap[keyB] = FuncRef{File: v.FileB, Line: v.LineB, Func: v.FuncB}
+
+		uf.union(keyA, keyB)
+	}
+
+	// Group functions by their root in union-find
+	for key := range funcMap {
+		root := uf.find(key)
+		groupMembers[root] = append(groupMembers[root], key)
+	}
+
+	// Build clusters from groups
+	var clusters []Cluster
+	for root, memberKeys := range groupMembers {
+		// Extract unique members
+		var members []FuncRef
+		for _, key := range memberKeys {
+			members = append(members, funcMap[key])
+		}
+
+		// Sort members by file then line for determinism
+		// ponytail: bubble sort on small slices, fine for duplication's typical cluster sizes
+		for i := 0; i < len(members); i++ {
+			for j := i + 1; j < len(members); j++ {
+				if members[j].File < members[i].File || (members[j].File == members[i].File && members[j].Line < members[i].Line) {
+					members[i], members[j] = members[j], members[i]
+				}
+			}
+		}
+
+		// Collect all pairs for this cluster (violations where both endpoints are in this cluster)
+		var clusterPairs []Violation
+		for _, v := range violations {
+			keyA := fmt.Sprintf("%s:%d:%s", v.FileA, v.LineA, v.FuncA)
+			keyB := fmt.Sprintf("%s:%d:%s", v.FileB, v.LineB, v.FuncB)
+			if uf.find(keyA) == root && uf.find(keyB) == root {
+				clusterPairs = append(clusterPairs, v)
+			}
+		}
+
+		// Calculate total duplicated lines (sum of all pairs)
+		totalDupLines := 0
+		for _, pair := range clusterPairs {
+			totalDupLines += pair.DupLines
+		}
+
+		// Determine if cross-package
+		var dirs []string
+		for _, member := range members {
+			dirs = append(dirs, filepath.Dir(member.File))
+		}
+		crossPackage := false
+		if len(dirs) > 1 {
+			baseDir := dirs[0]
+			for i := 1; i < len(dirs); i++ {
+				if dirs[i] != baseDir {
+					crossPackage = true
+					break
+				}
+			}
+		}
+
+		// postcondition assert: cluster must have at least 2 members (guaranteed by construction)
+		assertf(len(members) >= 2, "cluster %v has fewer than 2 members", root)
+
+		clusters = append(clusters, Cluster{
+			Members:      members,
+			Pairs:        clusterPairs,
+			DupLines:     totalDupLines,
+			CrossPackage: crossPackage,
+		})
+	}
+
+	// Sort clusters by DupLines descending (ties by first member's file then line)
+	// ponytail: bubble sort on small slices, fine for typical reports
+	for i := 0; i < len(clusters); i++ {
+		for j := i + 1; j < len(clusters); j++ {
+			if clusters[j].DupLines > clusters[i].DupLines ||
+				(clusters[j].DupLines == clusters[i].DupLines &&
+					(clusters[j].Members[0].File < clusters[i].Members[0].File ||
+						(clusters[j].Members[0].File == clusters[i].Members[0].File && clusters[j].Members[0].Line < clusters[i].Members[0].Line))) {
+				clusters[i], clusters[j] = clusters[j], clusters[i]
+			}
+		}
+	}
+
+	return clusters
+}
+
 // reportDuplicates compares all function pairs and builds violation list with similarity threshold
 func reportDuplicates(allFuncs []FuncInfo, minSimilarity float64) []Violation {
 	var violations []Violation
@@ -394,6 +557,7 @@ func CheckWithSimilarity(paths []string, minLines int, minSimilarity float64, op
 
 	allFuncs := scanFilesForFunctions(nonTestFiles, minLines, opts, report)
 	report.Violations = reportDuplicates(allFuncs, minSimilarity)
+	report.Clusters = buildClusters(report.Violations)
 
 	return *report, nil
 }

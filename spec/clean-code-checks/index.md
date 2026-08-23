@@ -19,3 +19,4 @@ The first check implemented is func-length-limit, which flags functions exceedin
 - [selective-checker-ignore](./selective-checker-ignore.md)
 - [duplication-detector](./duplication-detector.md)
 - [duplication-near-miss](./duplication-near-miss.md)
+- [duplication-clustering](./duplication-clustering.md)
