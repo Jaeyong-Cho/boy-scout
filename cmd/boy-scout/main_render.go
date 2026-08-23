@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 
 	"boy-scout/internal/abstractness"
 	"boy-scout/internal/cppfunclen"
@@ -14,6 +15,28 @@ import (
 	"boy-scout/internal/instability"
 	"boy-scout/internal/tsfunclen"
 )
+
+// renderReportAsJSON marshals any report to JSON and renders it.
+// Uses reflection to extract violation and skipped counts from the report.
+func renderReportAsJSON(report any, stdout, stderr io.Writer) int {
+	data, err := json.Marshal(report)
+	assertf(err == nil, "json.Marshal failed: %v", err)
+
+	fmt.Fprintf(stdout, "%s\n", string(data))
+
+	// Extract violation and skipped counts using reflection
+	numViolations, numSkipped := 0, 0
+	if rv := reflect.ValueOf(report); rv.Kind() == reflect.Struct {
+		if violations := rv.FieldByName("Violations"); violations.IsValid() {
+			numViolations = violations.Len()
+		}
+		if skipped := rv.FieldByName("Skipped"); skipped.IsValid() {
+			numSkipped = skipped.Len()
+		}
+	}
+
+	return exitCodeFor(numViolations, numSkipped)
+}
 
 // writeCrapLines writes a crap report's violations and excluded entries to w,
 // each line prefixed with prefix (e.g. "[crap] " when combined with other checks).
@@ -37,12 +60,7 @@ func renderCrapText(report crap.Report, stdout, stderr io.Writer) int {
 }
 
 func renderCrapJSON(report crap.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
 
 // writeFilelenLines writes a filelen report's violations and excluded files to w,
@@ -63,12 +81,7 @@ func renderFilelenText(report filelen.Report, stdout, stderr io.Writer) int {
 }
 
 func renderFilelenJSON(report filelen.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
 
 // writeDuplicationLines writes a duplication report's violations to w,
@@ -103,12 +116,7 @@ func renderDuplicationText(report duplication.Report, stdout, stderr io.Writer) 
 }
 
 func renderDuplicationJSON(report duplication.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
 
 // writeInstabilityLines writes an instability report's violations to w,
@@ -131,12 +139,7 @@ func renderInstabilityText(report instability.Report, stdout, stderr io.Writer) 
 }
 
 func renderInstabilityJSON(report instability.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
 
 // writeAbstractnessLines writes an abstractness report's violations to w,
@@ -164,12 +167,7 @@ func renderAbstractnessText(report abstractness.Report, stdout, stderr io.Writer
 }
 
 func renderAbstractnessJSON(report abstractness.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
 
 type combinedReport struct {
@@ -243,12 +241,7 @@ func renderText(report gofunclen.Report, stdout, stderr io.Writer) int {
 }
 
 func renderJSON(report gofunclen.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
 
 // writeCppFunclenLines writes a cpp funclen report's violations and excluded entries to w.
@@ -269,12 +262,7 @@ func renderCppFunclenText(report cppfunclen.Report, stdout, stderr io.Writer) in
 }
 
 func renderCppFunclenJSON(report cppfunclen.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
 
 // writeTsFunclenLines writes a ts funclen report's violations and excluded entries to w.
@@ -295,10 +283,5 @@ func renderTsFunclenText(report tsfunclen.Report, stdout, stderr io.Writer) int 
 }
 
 func renderTsFunclenJSON(report tsfunclen.Report, stdout, stderr io.Writer) int {
-	data, err := json.Marshal(report)
-	assertf(err == nil, "json.Marshal failed: %v", err)
-
-	fmt.Fprintf(stdout, "%s\n", string(data))
-
-	return exitCodeFor(len(report.Violations), len(report.Skipped))
+	return renderReportAsJSON(report, stdout, stderr)
 }
