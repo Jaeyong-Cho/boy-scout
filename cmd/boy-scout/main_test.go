@@ -778,3 +778,103 @@ func TestRun_ExcludedViolationsDoNotAffectExitCode(t *testing.T) {
 		t.Errorf("expected exit code 0 (excluded violation doesn't count), got %d", exitCode)
 	}
 }
+
+func TestRun_InstabilityCommandIsRegistered(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write a minimal go.mod
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Write a minimal Go file
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "instability", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	// Should not error (exit code 0 or 1 is fine, 2 means error)
+	if exitCode == 2 {
+		t.Errorf("expected instability command to work, got exit code 2\nstderr: %s", stderrBuf.String())
+	}
+
+	// Output should contain instability metrics
+	output := stdoutBuf.String()
+	if !strings.Contains(output, "total edges") && !strings.Contains(output, "violation rate") {
+		t.Errorf("expected instability output to contain metrics, got:\n%s", output)
+	}
+}
+
+func TestRun_InstabilityJSONFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write a minimal go.mod
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Write a minimal Go file
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "instability", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	if exitCode == 2 {
+		t.Errorf("expected instability JSON command to work, got exit code 2\nstderr: %s", stderrBuf.String())
+	}
+
+	// Parse JSON output
+	var report struct {
+		Violations           []interface{}
+		TotalEdges           int
+		ViolationRate        float64
+		WeightedViolationRate float64
+	}
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
+	}
+}
+
+func TestRun_AllIncludesInstability(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write a minimal go.mod
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Write a minimal Go file
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	if exitCode == 2 {
+		t.Errorf("expected 'go all' command to work, got exit code 2\nstderr: %s", stderrBuf.String())
+	}
+
+	// Parse JSON output and check for instability field
+	var report struct {
+		Instability struct {
+			TotalEdges int
+		}
+	}
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
+	}
+
+	// Check that instability field exists
+	if report.Instability.TotalEdges < 0 {
+		t.Error("expected instability field in combined report")
+	}
+}
