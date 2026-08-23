@@ -14,24 +14,31 @@ func main() {
 	changelogFlag := flag.Bool("changelog", false, "print changelog entry instead of version")
 	flag.Parse()
 
+	output, success := releaseOutput(*changelogFlag)
+	fmt.Print(output)
+	if !success {
+		os.Exit(1)
+	}
+}
+
+// releaseOutput computes the release output (version or changelog).
+func releaseOutput(printChangelog bool) (string, bool) {
 	lastTag := getLastTag()
 	subjects, err := getCommitSubjects(lastTag)
 	if err != nil {
-		os.Exit(1)
+		return "", false
 	}
 
 	next, ok := release.NextVersion(lastTag, subjects)
 	if !ok {
-		fmt.Println("none")
-		return
+		return "none\n", true
 	}
 
-	if *changelogFlag {
-		fmt.Print(release.ChangelogEntry(next, subjects))
-		return
+	if printChangelog {
+		return release.ChangelogEntry(next, subjects), true
 	}
 
-	fmt.Println(next)
+	return next + "\n", true
 }
 
 func getLastTag() string {

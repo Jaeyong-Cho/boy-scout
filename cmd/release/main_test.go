@@ -27,6 +27,22 @@ func TestGetCommitSubjects_ParsesGitOutput(t *testing.T) {
 	}
 }
 
+// TestReleaseOutput_ReturnsOutputAndSuccess characterizes releaseOutput behavior.
+func TestReleaseOutput_ReturnsOutputAndSuccess(t *testing.T) {
+	output, success := releaseOutput(false)
+	if !success {
+		// releaseOutput might fail if no commits; just verify it returned something
+		if output != "" {
+			t.Errorf("expected output on failure, got empty string")
+		}
+	} else {
+		// If it succeeded, output should be non-empty
+		if output == "" {
+			t.Errorf("expected non-empty output on success")
+		}
+	}
+}
+
 // TestMain_PrintsVersionOrNone verifies that cmd/release prints a version
 // matching ^v[0-9]+\.[0-9]+\.[0-9]+$ or the literal "none".
 func TestMain_PrintsVersionOrNone(t *testing.T) {

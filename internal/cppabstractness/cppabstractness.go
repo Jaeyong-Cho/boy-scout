@@ -9,6 +9,7 @@ import (
 
 	"boy-scout/internal/abstractness"
 	"boy-scout/internal/cppinstability"
+	"boy-scout/internal/instability"
 )
 
 type Options struct {
@@ -37,42 +38,8 @@ func Check(paths []string, minDistance float64, opts Options) (abstractness.Repo
 
 	// For each file (package in C++ terms), count abstract/concrete classes
 	for filePath, pkgStats := range graph.Packages {
-		abstractCount, concreteCount := countClassesInFiles(pkgStats.Files)
-
-		// Skip files with no classes (divide-by-zero guard)
-		if abstractCount+concreteCount == 0 {
-			continue
-		}
-
-		// Compute abstractness: ratio of abstract classes to total classes
-		abstractnessVal := float64(abstractCount) / float64(abstractCount+concreteCount)
-
-		// Apply the distance formula: signedD = A + I - 1
-		signedD := abstractnessVal + pkgStats.Instability - 1.0
-		distance := absFloat64(signedD)
-
-		// Determine zone: Pain (signedD < -minDistance) or Uselessness (signedD > minDistance)
-		// Note: no surface-ratio gate in this story
-		zone := ""
-		shouldReport := false
-
-		if signedD < -minDistance {
-			zone = "Pain"
-			shouldReport = true
-		} else if signedD > minDistance {
-			zone = "Uselessness"
-			shouldReport = true
-		}
-
-		if shouldReport {
-			violations = append(violations, abstractness.PackageDiagnosis{
-				ImportPath:   filePath,
-				Abstractness: abstractnessVal,
-				Instability:  pkgStats.Instability,
-				Distance:     distance,
-				Zone:         zone,
-				SurfaceRatio: 0, // No gate in this story
-			})
+		if diag := diagnosisForFile(filePath, pkgStats, minDistance); diag != nil {
+			violations = append(violations, *diag)
 		}
 	}
 
@@ -81,6 +48,45 @@ func Check(paths []string, minDistance float64, opts Options) (abstractness.Repo
 		Skipped:       skipped,
 		TotalPackages: len(graph.Packages),
 	}, nil
+}
+
+// diagnosisForFile analyzes one file's abstractness and returns a violation if it's in a zone (Pain/Uselessness).
+func diagnosisForFile(filePath string, pkgStats instability.PackageStats, minDistance float64) *abstractness.PackageDiagnosis {
+	abstractCount, concreteCount := countClassesInFiles(pkgStats.Files)
+
+	// Skip files with no classes (divide-by-zero guard)
+	if abstractCount+concreteCount == 0 {
+		return nil
+	}
+
+	// Compute abstractness: ratio of abstract classes to total classes
+	abstractnessVal := float64(abstractCount) / float64(abstractCount+concreteCount)
+
+	// Apply the distance formula: signedD = A + I - 1
+	signedD := abstractnessVal + pkgStats.Instability - 1.0
+	distance := absFloat64(signedD)
+
+	// Determine zone: Pain (signedD < -minDistance) or Uselessness (signedD > minDistance)
+	if signedD < -minDistance {
+		return &abstractness.PackageDiagnosis{
+			ImportPath:   filePath,
+			Abstractness: abstractnessVal,
+			Instability:  pkgStats.Instability,
+			Distance:     distance,
+			Zone:         "Pain",
+			SurfaceRatio: 0,
+		}
+	} else if signedD > minDistance {
+		return &abstractness.PackageDiagnosis{
+			ImportPath:   filePath,
+			Abstractness: abstractnessVal,
+			Instability:  pkgStats.Instability,
+			Distance:     distance,
+			Zone:         "Uselessness",
+			SurfaceRatio: 0,
+		}
+	}
+	return nil
 }
 
 // countClassesInFiles counts abstract and concrete classes in a list of files.

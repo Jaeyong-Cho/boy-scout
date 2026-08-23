@@ -32,16 +32,9 @@ func BuildGraph(paths []string, opts Options) (instability.Graph, error) {
 	}
 
 	// Normalize root path
-	root, err := filepath.Abs(paths[0])
+	root, err := normalizeRootPath(paths[0])
 	if err != nil {
-		return graph, fmt.Errorf("failed to resolve root path: %w", err)
-	}
-	stat, err := os.Stat(root)
-	if err != nil {
-		return graph, fmt.Errorf("failed to stat root: %w", err)
-	}
-	if !stat.IsDir() {
-		root = filepath.Dir(root)
+		return graph, err
 	}
 
 	graph.Root = root
@@ -63,6 +56,22 @@ func BuildGraph(paths []string, opts Options) (instability.Graph, error) {
 	}
 
 	return graph, nil
+}
+
+// normalizeRootPath converts a path to an absolute directory path.
+func normalizeRootPath(path string) (string, error) {
+	root, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve root path: %w", err)
+	}
+	stat, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat root: %w", err)
+	}
+	if !stat.IsDir() {
+		root = filepath.Dir(root)
+	}
+	return root, nil
 }
 
 // Check runs the C++ instability check and returns a report.
@@ -158,21 +167,35 @@ func processInclude(node *sitter.Node, sourceCode []byte, fileKey, filePath stri
 	}
 
 	// Extract the include path from string_literal
-	// string_literal has children: ", string_content, "
-	// We want the string_content child
-	var includePath string
-	for i := uint32(0); i < pathNode.ChildCount(); i++ {
-		child := pathNode.Child(int(i))
-		if child.Type() == "string_content" {
-			includePath = string(child.Content(sourceCode))
-			break
-		}
-	}
-
+	includePath := extractStringContent(pathNode, sourceCode)
 	if includePath == "" {
 		return
 	}
 
+	// Resolve and validate the include path
+	relIncludePath, ok := resolveAndValidateInclude(filePath, includePath, projectRoot)
+	if !ok {
+		return
+	}
+
+	packageImports[fileKey][relIncludePath] = true
+}
+
+// extractStringContent extracts the string value from a string_literal node.
+func extractStringContent(pathNode *sitter.Node, sourceCode []byte) string {
+	// string_literal has children: ", string_content, "
+	for i := uint32(0); i < pathNode.ChildCount(); i++ {
+		child := pathNode.Child(int(i))
+		if child.Type() == "string_content" {
+			return string(child.Content(sourceCode))
+		}
+	}
+	return ""
+}
+
+// resolveAndValidateInclude resolves an include path and checks if the file exists.
+// Returns the relative path to project root and whether it was successful.
+func resolveAndValidateInclude(filePath, includePath, projectRoot string) (string, bool) {
 	// Resolve the include path relative to the including file's directory
 	fileDir := filepath.Dir(filePath)
 	resolvedPath := filepath.Join(fileDir, includePath)
@@ -180,19 +203,19 @@ func processInclude(node *sitter.Node, sourceCode []byte, fileKey, filePath stri
 	// Normalize to absolute then relative path (per plan spec)
 	absIncludePath, err := filepath.Abs(resolvedPath)
 	if err != nil {
-		return
+		return "", false
 	}
 
 	// Make relative to project root
 	relIncludePath, err := filepath.Rel(projectRoot, absIncludePath)
 	if err != nil {
-		return
+		return "", false
 	}
 
 	// Only count if the resolved path exists as a file
 	if _, err := os.Stat(absIncludePath); err != nil {
-		return
+		return "", false
 	}
 
-	packageImports[fileKey][relIncludePath] = true
+	return relIncludePath, true
 }

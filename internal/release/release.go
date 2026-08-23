@@ -76,6 +76,12 @@ func applyBump(major, minor, patch int, bump bumpType) string {
 
 	assertf(major > 0 || bump != bumpMajor, "applyBump: major=0 must never have bump=bumpMajor")
 
+	major, minor, patch = applyBumpIncrement(major, minor, patch, bump)
+	return fmt.Sprintf("v%d.%d.%d", major, minor, patch)
+}
+
+// applyBumpIncrement applies the version increment based on bump type.
+func applyBumpIncrement(major, minor, patch int, bump bumpType) (int, int, int) {
 	switch bump {
 	case bumpPatch:
 		patch++
@@ -87,8 +93,7 @@ func applyBump(major, minor, patch int, bump bumpType) string {
 		minor = 0
 		patch = 0
 	}
-
-	return fmt.Sprintf("v%d.%d.%d", major, minor, patch)
+	return major, minor, patch
 }
 
 // parseTag parses a version string in the form vMAJOR.MINOR.PATCH.
