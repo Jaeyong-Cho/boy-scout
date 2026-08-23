@@ -1,5 +1,8 @@
 # Spec Index
 
+## Architecture checks
+- [architecture-checks](./architecture-checks/index.md)
+
 ## Clean code checks
 - [clean-code-checks](./clean-code-checks/index.md)
 

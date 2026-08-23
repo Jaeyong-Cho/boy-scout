@@ -9,6 +9,7 @@ import (
 	"boy-scout/internal/crap"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/gofunclen"
+	"boy-scout/internal/instability"
 )
 
 // writeCrapLines writes a crap report's violations and excluded entries to w,
@@ -67,19 +68,49 @@ func renderFilelenJSON(report filelen.Report, stdout, stderr io.Writer) int {
 	return exitCodeFor(len(report.Violations), len(report.Skipped))
 }
 
+// writeInstabilityLines writes an instability report's violations to w,
+// each line prefixed with prefix (e.g. "[instability] " when combined with other checks).
+func writeInstabilityLines(w io.Writer, prefix string, report instability.Report) {
+	for _, v := range report.Violations {
+		fmt.Fprintf(w, "%s%s -> %s: Gap=%.3f (I_source=%.3f, I_target=%.3f)\n",
+			prefix, v.Source, v.Target, v.Gap, v.I_A, v.I_B)
+	}
+	for _, f := range report.Skipped {
+		fmt.Fprintf(w, "%sskipped file: %s (%s)\n", prefix, f.File, f.Error)
+	}
+	fmt.Fprintf(w, "%stotal edges: %d, violation rate: %.3f, weighted violation rate: %.3f\n",
+		prefix, report.TotalEdges, report.ViolationRate, report.WeightedViolationRate)
+}
+
+func renderInstabilityText(report instability.Report, stdout, stderr io.Writer) int {
+	writeInstabilityLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderInstabilityJSON(report instability.Report, stdout, stderr io.Writer) int {
+	data, err := json.Marshal(report)
+	assertf(err == nil, "json.Marshal failed: %v", err)
+
+	fmt.Fprintf(stdout, "%s\n", string(data))
+
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
 type combinedReport struct {
-	Gofunclen gofunclen.Report `json:"gofunclen"`
-	Crap      crap.Report      `json:"crap"`
-	Filelen   filelen.Report   `json:"filelen"`
+	Gofunclen   gofunclen.Report   `json:"gofunclen"`
+	Crap        crap.Report        `json:"crap"`
+	Filelen     filelen.Report     `json:"filelen"`
+	Instability instability.Report `json:"instability"`
 }
 
 func renderAllText(report combinedReport, stdout, stderr io.Writer) int {
 	writeGofunclenLines(stdout, "[gofunclen] ", report.Gofunclen)
 	writeCrapLines(stdout, "[crap] ", report.Crap)
 	writeFilelenLines(stdout, "[filelen] ", report.Filelen)
+	writeInstabilityLines(stdout, "[instability] ", report.Instability)
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations) + len(report.Instability.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped) + len(report.Instability.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -90,8 +121,8 @@ func renderAllJSON(report combinedReport, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "%s\n", string(data))
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations) + len(report.Instability.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped) + len(report.Instability.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }

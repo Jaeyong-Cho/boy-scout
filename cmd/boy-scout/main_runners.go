@@ -9,6 +9,7 @@ import (
 	"boy-scout/internal/crap"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/gofunclen"
+	"boy-scout/internal/instability"
 )
 
 func runGoFunclen(args []string, stdout, stderr io.Writer) int {
@@ -106,6 +107,37 @@ func runGoFilelen(args []string, stdout, stderr io.Writer) int {
 	return renderFilelenText(report, stdout, stderr)
 }
 
+func runGoInstability(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("instability", flag.ContinueOnError)
+	minGap := fs.Float64("min-gap", 0, "minimum gap to report (violations with Gap > min-gap)")
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "unused (instability has no function-level concept)")
+	debug := fs.Bool("debug", false, "unused")
+
+	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	opts := instability.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        *debug,
+	}
+
+	report, err := instability.Check(paths, *minGap, opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	if *format == "json" {
+		return renderInstabilityJSON(report, stdout, stderr)
+	}
+	return renderInstabilityText(report, stdout, stderr)
+}
+
 func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("filelen", flag.ContinueOnError)
 	maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
@@ -182,16 +214,17 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	gofunclenReport, crapReport, filelenReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	gofunclenReport, crapReport, filelenReport, instabilityReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
 
 	combined := combinedReport{
-		Gofunclen: gofunclenReport,
-		Crap:      crapReport,
-		Filelen:   filelenReport,
+		Gofunclen:   gofunclenReport,
+		Crap:        crapReport,
+		Filelen:     filelenReport,
+		Instability: instabilityReport,
 	}
 
 	// Render output
@@ -201,8 +234,8 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	return renderAllText(combined, stdout, stderr)
 }
 
-// checkAll runs the gofunclen, crap, and filelen checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, error) {
+// checkAll runs the gofunclen, crap, filelen, and instability checks with shared options.
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, instability.Report, error) {
 	opts := gofunclen.Options{
 		ExcludeFiles: excludeFiles,
 		ExcludeFuncs: excludeFuncs,
@@ -217,21 +250,30 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 		ExcludeFiles: excludeFiles,
 		Debug:        debug,
 	}
+	instabilityOpts := instability.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
 
 	gofunclenReport, err := gofunclen.Check(paths, 50, opts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
 	}
 
 	crapReport, err := crap.Check(paths, 6.0, crapOpts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
 	}
 
 	filelenReport, err := filelen.Check(paths, 300, []string{".go"}, filelenOpts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
 	}
 
-	return gofunclenReport, crapReport, filelenReport, nil
+	instabilityReport, err := instability.Check(paths, 0, instabilityOpts)
+	if err != nil {
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
+	}
+
+	return gofunclenReport, crapReport, filelenReport, instabilityReport, nil
 }
