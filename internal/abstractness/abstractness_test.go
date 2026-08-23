@@ -608,3 +608,473 @@ func Call() {
 		t.Fatal("expected broken.go in skipped files")
 	}
 }
+
+// TestCheck_ShallowPainStillFlagged tests that a concrete stable package with SurfaceRatio=1.0 is still flagged.
+// Given: legacydb (6 exported structs, 0 unexported → SurfaceRatio=1.0)
+// When: abstractness.Check runs with default minSurfaceRatio=0.5
+// Then: it is flagged as Zone of Pain (shallow — nothing hidden)
+func TestCheck_ShallowPainStillFlagged(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/legacy\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create legacydb package: 6 exported structs, no unexported helpers
+	legacydbDir := filepath.Join(tempDir, "legacydb")
+	os.Mkdir(legacydbDir, 0755)
+
+	legacydbCode := `package legacydb
+
+type UserRow struct{ ID int }
+type OrderRow struct{ ID int }
+type ProductRow struct{ ID int }
+type InvoiceRow struct{ ID int }
+type LogEntry struct{ ID int }
+type ConfigEntry struct{ ID int }
+
+func Query() {}
+`
+
+	if err := os.WriteFile(filepath.Join(legacydbDir, "legacydb.go"), []byte(legacydbCode), 0644); err != nil {
+		t.Fatalf("failed to write legacydb.go: %v", err)
+	}
+
+	// Create 8 caller packages importing legacydb
+	for i := 1; i <= 8; i++ {
+		callerDir := filepath.Join(tempDir, fmt.Sprintf("caller%d", i))
+		os.Mkdir(callerDir, 0755)
+		callerCode := fmt.Sprintf(`package caller%d
+
+import "example.com/legacy/legacydb"
+
+func Call%d() {
+	legacydb.Query()
+}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(callerDir, fmt.Sprintf("caller%d.go", i)), []byte(callerCode), 0644); err != nil {
+			t.Fatalf("failed to write caller%d: %v", i, err)
+		}
+	}
+
+	report, err := CheckWithSurfaceRatio([]string{tempDir}, 0.5, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the legacydb violation
+	var diagnosis *PackageDiagnosis
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/legacy/legacydb" {
+			diagnosis = &report.Violations[i]
+			break
+		}
+	}
+
+	if diagnosis == nil {
+		t.Fatalf("expected legacydb in violations, got: %v", report.Violations)
+	}
+
+	if diagnosis.Zone != "Pain" {
+		t.Fatalf("expected Zone=Pain, got %s", diagnosis.Zone)
+	}
+
+	if fmt.Sprintf("%.1f", diagnosis.SurfaceRatio) != "1.0" {
+		t.Fatalf("expected SurfaceRatio≈1.0 for legacydb, got %.1f", diagnosis.SurfaceRatio)
+	}
+}
+
+// TestCheck_DeepPainCandidateNotFlagged tests that a deep module (small interface, lots of hidden impl) is NOT flagged.
+// Given: deepcache (3 exported structs, ~40 unexported helpers → SurfaceRatio≈0.07; Ca=8, Ce=0 → I=0.0, Pain candidate)
+// When: abstractness.Check runs with default minSurfaceRatio=0.5
+// Then: it is NOT flagged (deep module — concrete+stable is fine when little is exposed)
+func TestCheck_DeepPainCandidateNotFlagged(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/cache\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create deepcache package: 3 exported structs, lots of unexported helpers
+	deepcacheDir := filepath.Join(tempDir, "deepcache")
+	os.Mkdir(deepcacheDir, 0755)
+
+	// Create a deep module: small public interface, lots of hidden implementation
+	deepcacheCode := `package deepcache
+
+// Public interface
+type Cache struct {
+	data map[string]interface{}
+	lock interface{}
+}
+
+type Config struct {
+	MaxSize int
+}
+
+type Stats struct {
+	Hits   int
+	Misses int
+}
+
+// ~40 unexported helper functions and types
+func (c *Cache) get(key string) interface{} { return nil }
+func (c *Cache) set(key string, val interface{}) {}
+func (c *Cache) evict(key string) {}
+func (c *Cache) findLRU() string { return "" }
+func (c *Cache) updateLRU(key string) {}
+func (c *Cache) marshal(v interface{}) []byte { return nil }
+func (c *Cache) unmarshal(data []byte) interface{} { return nil }
+func (c *Cache) compress(data []byte) []byte { return nil }
+func (c *Cache) decompress(data []byte) []byte { return nil }
+
+type lruNode struct{ key string }
+type hashBucket struct{ items []lruNode }
+type serializer interface{}
+type compressor interface{}
+
+func newLRUNode(key string) *lruNode { return nil }
+func newHashBucket() *hashBucket { return nil }
+func newSerializer() serializer { return nil }
+func newCompressor() compressor { return nil }
+func hashKey(key string) uint64 { return 0 }
+func validateKey(key string) error { return nil }
+func validateSize(sz int) error { return nil }
+func computeHash(data []byte) uint64 { return 0 }
+func encodeStats(s *Stats) []byte { return nil }
+func decodeStats(data []byte) *Stats { return nil }
+func diffStats(s1, s2 *Stats) *Stats { return nil }
+func mergeStats(s1, s2 *Stats) *Stats { return nil }
+`
+
+	if err := os.WriteFile(filepath.Join(deepcacheDir, "deepcache.go"), []byte(deepcacheCode), 0644); err != nil {
+		t.Fatalf("failed to write deepcache.go: %v", err)
+	}
+
+	// Create 8 caller packages importing deepcache (Ca=8, Ce=0 → I=0.0)
+	for i := 1; i <= 8; i++ {
+		callerDir := filepath.Join(tempDir, fmt.Sprintf("caller%d", i))
+		os.Mkdir(callerDir, 0755)
+		callerCode := fmt.Sprintf(`package caller%d
+
+import "example.com/cache/deepcache"
+
+func Call%d(cfg deepcache.Config) {
+	_ = cfg
+}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(callerDir, fmt.Sprintf("caller%d.go", i)), []byte(callerCode), 0644); err != nil {
+			t.Fatalf("failed to write caller%d: %v", i, err)
+		}
+	}
+
+	report, err := CheckWithSurfaceRatio([]string{tempDir}, 0.5, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// deepcache should NOT be in violations (it's a deep module)
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/cache/deepcache" {
+			t.Fatalf("deepcache should not be flagged (deep module), got SurfaceRatio=%f", report.Violations[i].SurfaceRatio)
+		}
+	}
+}
+
+// TestCheck_IgnoreDeepModuleGateRestoresOldBehavior tests that --ignore-deep-module-gate restores Story 2 behavior.
+// Given: deepcache fixture with SurfaceRatio≈0.07
+// When: abstractness.Check runs with IgnoreDeepModuleGate=true
+// Then: it IS flagged as Zone of Pain (old Story 2 behavior, for comparison)
+func TestCheck_IgnoreDeepModuleGateRestoresOldBehavior(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/cache\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create deepcache package (same as above)
+	deepcacheDir := filepath.Join(tempDir, "deepcache")
+	os.Mkdir(deepcacheDir, 0755)
+
+	deepcacheCode := `package deepcache
+
+type Cache struct {
+	data map[string]interface{}
+	lock interface{}
+}
+
+type Config struct {
+	MaxSize int
+}
+
+type Stats struct {
+	Hits   int
+	Misses int
+}
+
+func (c *Cache) get(key string) interface{} { return nil }
+func (c *Cache) set(key string, val interface{}) {}
+func (c *Cache) evict(key string) {}
+func (c *Cache) findLRU() string { return "" }
+func (c *Cache) updateLRU(key string) {}
+func (c *Cache) marshal(v interface{}) []byte { return nil }
+func (c *Cache) unmarshal(data []byte) interface{} { return nil }
+func (c *Cache) compress(data []byte) []byte { return nil }
+func (c *Cache) decompress(data []byte) []byte { return nil }
+
+type lruNode struct{ key string }
+type hashBucket struct{ items []lruNode }
+type serializer interface{}
+type compressor interface{}
+
+func newLRUNode(key string) *lruNode { return nil }
+func newHashBucket() *hashBucket { return nil }
+func newSerializer() serializer { return nil }
+func newCompressor() compressor { return nil }
+func hashKey(key string) uint64 { return 0 }
+func validateKey(key string) error { return nil }
+func validateSize(sz int) error { return nil }
+func computeHash(data []byte) uint64 { return 0 }
+func encodeStats(s *Stats) []byte { return nil }
+func decodeStats(data []byte) *Stats { return nil }
+func diffStats(s1, s2 *Stats) *Stats { return nil }
+func mergeStats(s1, s2 *Stats) *Stats { return nil }
+`
+
+	if err := os.WriteFile(filepath.Join(deepcacheDir, "deepcache.go"), []byte(deepcacheCode), 0644); err != nil {
+		t.Fatalf("failed to write deepcache.go: %v", err)
+	}
+
+	// Create 8 caller packages
+	for i := 1; i <= 8; i++ {
+		callerDir := filepath.Join(tempDir, fmt.Sprintf("caller%d", i))
+		os.Mkdir(callerDir, 0755)
+		callerCode := fmt.Sprintf(`package caller%d
+
+import "example.com/cache/deepcache"
+
+func Call%d(cfg deepcache.Config) {
+	_ = cfg
+}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(callerDir, fmt.Sprintf("caller%d.go", i)), []byte(callerCode), 0644); err != nil {
+			t.Fatalf("failed to write caller%d: %v", i, err)
+		}
+	}
+
+	// Run with IgnoreDeepModuleGate=true
+	report, err := CheckWithSurfaceRatio([]string{tempDir}, 0.5, 0.5, Options{IgnoreDeepModuleGate: true})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// deepcache SHOULD be in violations now (old behavior)
+	var diagnosis *PackageDiagnosis
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/cache/deepcache" {
+			diagnosis = &report.Violations[i]
+			break
+		}
+	}
+
+	if diagnosis == nil {
+		t.Fatalf("expected deepcache in violations with IgnoreDeepModuleGate=true, got: %v", report.Violations)
+	}
+
+	if diagnosis.Zone != "Pain" {
+		t.Fatalf("expected Zone=Pain, got %s", diagnosis.Zone)
+	}
+}
+
+// TestCheck_ExactlyAtMinSurfaceRatioIsFlagged tests the boundary where SurfaceRatio=minSurfaceRatio.
+// Given: a package with SurfaceRatio exactly 0.5 at default minSurfaceRatio=0.5, and also a Pain candidate (signedD < -0.5)
+// When: checked
+// Then: it IS flagged (boundary: gate uses >=, exactly-at-limit still counts as shallow enough)
+func TestCheck_ExactlyAtMinSurfaceRatioIsFlagged(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/boundary\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create a package with SurfaceRatio exactly 0.5 (3 exported, 3 unexported top-level declarations)
+	// Also make it a Pain candidate: A=0 (concrete), I < 0.5 (stable/selective imports)
+	boundaryDir := filepath.Join(tempDir, "boundary")
+	os.Mkdir(boundaryDir, 0755)
+
+	// All declarations in one file to have exact control over the count
+	boundaryCode := `package boundary
+
+import "example.com/boundary/dep"
+
+// Exported
+type Thing struct{}
+type Stuff struct{}
+func Do() { _ = dep.Dep }
+
+// Unexported
+type thing struct{}
+type stuff struct{}
+func helper() {}
+`
+
+	if err := os.WriteFile(filepath.Join(boundaryDir, "boundary.go"), []byte(boundaryCode), 0644); err != nil {
+		t.Fatalf("failed to write boundary.go: %v", err)
+	}
+
+	// Create one package for boundary to import (Ce=1)
+	depDir := filepath.Join(tempDir, "dep")
+	os.Mkdir(depDir, 0755)
+	if err := os.WriteFile(filepath.Join(depDir, "dep.go"), []byte("package dep\nfunc Dep() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write dep.go: %v", err)
+	}
+
+	// Create 5 callers importing boundary (Ca=5)
+	// This gives I = Ce / (Ca + Ce) = 1 / 6 ≈ 0.167 < 0.5 → Pain
+	// signedD = 0 + 0.167 - 1 = -0.833 < -0.5 ✓
+	for i := 1; i <= 5; i++ {
+		callerDir := filepath.Join(tempDir, fmt.Sprintf("caller%d", i))
+		os.Mkdir(callerDir, 0755)
+		callerCode := fmt.Sprintf(`package caller%d
+
+import "example.com/boundary/boundary"
+
+func Call%d() {
+	boundary.Do()
+}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(callerDir, fmt.Sprintf("caller%d.go", i)), []byte(callerCode), 0644); err != nil {
+			t.Fatalf("failed to write caller%d: %v", i, err)
+		}
+	}
+
+	report, err := CheckWithSurfaceRatio([]string{tempDir}, 0.5, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// boundary should be flagged (SurfaceRatio=0.5 >= minSurfaceRatio=0.5 and it's a Pain candidate)
+	var diagnosis *PackageDiagnosis
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/boundary/boundary" {
+			diagnosis = &report.Violations[i]
+			break
+		}
+	}
+
+	if diagnosis == nil {
+		t.Fatalf("expected boundary in violations (SurfaceRatio at boundary), got: %v", report.Violations)
+	}
+
+	if diagnosis.Zone != "Pain" {
+		t.Fatalf("expected Zone=Pain, got %s", diagnosis.Zone)
+	}
+
+	if fmt.Sprintf("%.1f", diagnosis.SurfaceRatio) != "0.5" {
+		t.Fatalf("expected SurfaceRatio≈0.5, got %.1f", diagnosis.SurfaceRatio)
+	}
+}
+
+// TestCheck_UselessnessUnaffectedByGate tests that Uselessness is NOT gated by SurfaceRatio.
+// Given: plugini fixture (Zone of Uselessness) with any SurfaceRatio
+// When: checked
+// Then: it is still flagged exactly as Story 2 did (gate does not apply to Uselessness)
+func TestCheck_UselessnessUnaffectedByGate(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/plugin\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create plugini package: 3 exported interfaces (A=1.0)
+	pluginiDir := filepath.Join(tempDir, "plugini")
+	os.Mkdir(pluginiDir, 0755)
+
+	pluginiCode := `package plugini
+
+type Handler interface {
+	Handle(msg string) error
+}
+
+type Middleware interface {
+	Next(fn func() error) error
+}
+
+type Logger interface {
+	Log(msg string)
+}
+`
+
+	if err := os.WriteFile(filepath.Join(pluginiDir, "plugini.go"), []byte(pluginiCode), 0644); err != nil {
+		t.Fatalf("failed to write plugini.go: %v", err)
+	}
+
+	// Create 3 packages for plugini to import (I=1.0)
+	for i := 1; i <= 3; i++ {
+		depDir := filepath.Join(tempDir, fmt.Sprintf("dep%d", i))
+		os.Mkdir(depDir, 0755)
+		depCode := fmt.Sprintf(`package dep%d
+
+func Dep%d() {}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(depDir, fmt.Sprintf("dep%d.go", i)), []byte(depCode), 0644); err != nil {
+			t.Fatalf("failed to write dep%d: %v", i, err)
+		}
+	}
+
+	// plugini imports 3 packages
+	importsCode := `package plugini
+
+import (
+	"example.com/plugin/dep1"
+	"example.com/plugin/dep2"
+	"example.com/plugin/dep3"
+)
+
+func init() {
+	_ = dep1.Dep1
+	_ = dep2.Dep2
+	_ = dep3.Dep3
+}
+`
+	if err := os.WriteFile(filepath.Join(pluginiDir, "plugini_imports.go"), []byte(importsCode), 0644); err != nil {
+		t.Fatalf("failed to write plugini_imports.go: %v", err)
+	}
+
+	report, err := CheckWithSurfaceRatio([]string{tempDir}, 0.5, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the plugini violation
+	var diagnosis *PackageDiagnosis
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/plugin/plugini" {
+			diagnosis = &report.Violations[i]
+			break
+		}
+	}
+
+	if diagnosis == nil {
+		t.Fatalf("expected plugini in violations, got: %v", report.Violations)
+	}
+
+	if diagnosis.Zone != "Uselessness" {
+		t.Fatalf("expected Zone=Uselessness, got %s", diagnosis.Zone)
+	}
+
+	// Verify SurfaceRatio=0 for Uselessness row (postcondition)
+	if diagnosis.SurfaceRatio != 0 {
+		t.Fatalf("expected SurfaceRatio=0 for Uselessness, got %f", diagnosis.SurfaceRatio)
+	}
+}

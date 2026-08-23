@@ -19,12 +19,14 @@ type PackageDiagnosis struct {
 	Instability  float64 // I: from the graph
 	Distance     float64 // |A + I - 1|
 	Zone         string  // "Pain" or "Uselessness"
+	SurfaceRatio float64 // ratio of exported declarations to total declarations (for Pain candidates; 0 for Uselessness)
 }
 
 type Options struct {
-	ExcludeFiles []string
-	ExcludeFuncs []string // unused
-	Debug        bool
+	ExcludeFiles         []string
+	ExcludeFuncs         []string // unused
+	Debug                bool
+	IgnoreDeepModuleGate bool // when true, flag all Pain candidates regardless of SurfaceRatio
 }
 
 type Report struct {
@@ -37,6 +39,59 @@ func assertf(cond bool, format string, args ...any) {
 	if !cond {
 		panic(fmt.Sprintf(format, args...))
 	}
+}
+
+// surfaceRatio computes (# exported top-level declarations) / (# total top-level declarations).
+// Top-level declarations counted: FuncDecl (including methods) and each spec in GenDecl.
+// Returns the ratio and any parse errors encountered.
+// Pre: files must be non-empty and contain at least one computable declaration (asserted).
+func surfaceRatio(files []string) (ratio float64, err error) {
+	var exportedCount, totalCount int
+
+	for _, filePath := range files {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, filePath, nil, 0)
+		if err != nil {
+			continue // skip unparsable files
+		}
+
+		for _, decl := range file.Decls {
+			// Count FuncDecl: each top-level function and method
+			if funcDecl, ok := decl.(*ast.FuncDecl); ok {
+				totalCount++
+				if ast.IsExported(funcDecl.Name.Name) {
+					exportedCount++
+				}
+				continue
+			}
+
+			// Count GenDecl (type, var, const): each spec inside counts separately
+			if genDecl, ok := decl.(*ast.GenDecl); ok && (genDecl.Tok == token.TYPE || genDecl.Tok == token.VAR || genDecl.Tok == token.CONST) {
+				for _, spec := range genDecl.Specs {
+					totalCount++
+					// Extract the name of the spec
+					var name string
+					switch s := spec.(type) {
+					case *ast.TypeSpec:
+						name = s.Name.Name
+					case *ast.ValueSpec:
+						if len(s.Names) > 0 {
+							name = s.Names[0].Name
+						}
+					}
+					if name != "" && ast.IsExported(name) {
+						exportedCount++
+					}
+				}
+			}
+		}
+	}
+
+	// Assert: denominator (total top-level decls) is never 0 when this function is called
+	// (only called for packages that already have files and are Zone-of-Pain candidates)
+	assertf(totalCount > 0, "surfaceRatio called on package with 0 declarations; this should not happen for a Zone-of-Pain candidate")
+
+	return float64(exportedCount) / float64(totalCount), nil
 }
 
 // countExportedTypes scans the given .go files and returns the count of exported
@@ -84,7 +139,13 @@ func countExportedTypes(files []string) (interfaces, structs int, skipped []Skip
 
 // Check analyzes the abstractness and instability of packages in the given paths.
 func Check(paths []string, minDistance float64, opts Options) (Report, error) {
+	return CheckWithSurfaceRatio(paths, minDistance, 0.5, opts)
+}
+
+// CheckWithSurfaceRatio analyzes abstractness/instability and gates Pain candidates by SurfaceRatio.
+func CheckWithSurfaceRatio(paths []string, minDistance float64, minSurfaceRatio float64, opts Options) (Report, error) {
 	assertf(minDistance >= 0, "minDistance must be non-negative, got %f", minDistance)
+	assertf(minSurfaceRatio >= 0, "minSurfaceRatio must be non-negative, got %f", minSurfaceRatio)
 
 	report := Report{
 		Violations:    []PackageDiagnosis{},
@@ -140,10 +201,23 @@ func Check(paths []string, minDistance float64, opts Options) (Report, error) {
 
 		assertf(!(isPain && isUselessness), "package cannot be both Pain and Uselessness")
 
+		var surfaceRatioVal float64 = 0
 		if isPain {
 			zone = "Pain"
+			// Compute surface ratio for Pain candidates to decide if it should be reported
+			ratio, err := surfaceRatio(pkgStats.Files)
+			if err == nil {
+				surfaceRatioVal = ratio
+			}
+			// Only report if shallow enough (or gate is disabled)
+			if !opts.IgnoreDeepModuleGate && surfaceRatioVal < minSurfaceRatio {
+				continue
+			}
 		} else if isUselessness {
 			zone = "Uselessness"
+			// Uselessness rows always have SurfaceRatio=0 (gate does not apply)
+			surfaceRatioVal = 0
+			assertf(surfaceRatioVal == 0, "Uselessness row must have SurfaceRatio==0, got %f", surfaceRatioVal)
 		} else {
 			// No violation
 			continue
@@ -155,6 +229,7 @@ func Check(paths []string, minDistance float64, opts Options) (Report, error) {
 			Instability:  pkgStats.Instability,
 			Distance:     distance,
 			Zone:         zone,
+			SurfaceRatio: surfaceRatioVal,
 		})
 	}
 

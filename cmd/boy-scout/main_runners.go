@@ -142,6 +142,8 @@ func runGoInstability(args []string, stdout, stderr io.Writer) int {
 func runGoAbstractness(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("abstractness", flag.ContinueOnError)
 	minDistance := fs.Float64("min-distance", 0.5, "minimum distance from main sequence to report (packages with |signedD| > min-distance)")
+	minSurfaceRatio := fs.Float64("min-surface-ratio", 0.5, "minimum surface ratio for Pain zone candidates (ratio of exported to total declarations; only applies to Pain, not Uselessness)")
+	ignoreDeepModuleGate := fs.Bool("ignore-deep-module-gate", false, "if true, flag all Pain candidates regardless of surface ratio (Story 2 behavior)")
 	format := fs.String("format", "text", "output format: text or json")
 	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
 	excludeFunc := fs.String("exclude-func", "", "unused (abstractness has no function-level concept)")
@@ -154,11 +156,12 @@ func runGoAbstractness(args []string, stdout, stderr io.Writer) int {
 	}
 
 	opts := abstractness.Options{
-		ExcludeFiles: excludeFiles,
-		Debug:        *debug,
+		ExcludeFiles:         excludeFiles,
+		Debug:                *debug,
+		IgnoreDeepModuleGate: *ignoreDeepModuleGate,
 	}
 
-	report, err := abstractness.Check(paths, *minDistance, opts)
+	report, err := abstractness.CheckWithSurfaceRatio(paths, *minDistance, *minSurfaceRatio, opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2

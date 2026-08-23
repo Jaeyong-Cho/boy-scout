@@ -39,8 +39,21 @@ A package is flagged as a violation if:
 
 Otherwise no violation is reported (ideal combos: abstract-stable or concrete-unstable).
 
+### Surface ratio gate (Story 3 refinement)
+A concrete-and-stable (Pain zone) package is only reported as a violation if its **interface is also shallow** relative to what it hides. A "deep module" (small public surface, lots of hidden implementation) is the intended shape of good infrastructure, not a problem.
+
+For each Pain candidate, compute:
+- `SurfaceRatio` = (# exported top-level declarations) / (# exported + # unexported top-level declarations)
+  - Top-level declarations: functions (`FuncDecl`), and each spec in `GenDecl` (type/var/const)
+  - Exported means `ast.IsExported(name)` is true
+  - SurfaceRatio near 1.0 means shallow (exposes almost everything); near 0.0 means deep (hides most implementation)
+- Gate: report the Pain package only if `SurfaceRatio >= minSurfaceRatio` (or gate is disabled)
+- Zone of Uselessness rows always have `SurfaceRatio = 0` (gate doesn't apply; interface-only packages are inherently shallow by definition)
+
 ### Output and options
-- `--min-distance=N` (float, default 0.5): flag packages with `|signedD| > minDistance` (packages must be clearly closer to a bad corner than the middle to get flagged)
+- `--min-distance=N` (float, default 0.5): flag packages with `|signedD| > minDistance`
+- `--min-surface-ratio=N` (float, default 0.5): for Pain candidates, only report if `SurfaceRatio >= N` (gate applied to Pain only, not Uselessness)
+- `--ignore-deep-module-gate` (bool, default false): if true, flag all Pain candidates regardless of surface ratio (restores Story 2 behavior for comparison)
 - `--format=text|json` (default text): text format lists flagged packages line-by-line, JSON includes full report
 - `--exclude-file` (comma-separated globs): skip files matching patterns (same as other checks)
 - `--exclude-func` (unused, present for consistency with other checks)
@@ -50,7 +63,9 @@ Otherwise no violation is reported (ideal combos: abstract-stable or concrete-un
 
 ### Report structure
 The report contains:
-- `Violations`: list of `{ImportPath, Abstractness, Instability, Distance, Zone}` tuples where `|signedD| > minDistance`
+- `Violations`: list of `{ImportPath, Abstractness, Instability, Distance, Zone, SurfaceRatio}` tuples
+  - For Pain zone: `SurfaceRatio` is the computed value (only populated if reported); omit if SurfaceRatio < minSurfaceRatio and gate is active
+  - For Uselessness zone: `SurfaceRatio = 0` always
 - `Skipped`: list of files that couldn't be parsed
 - `TotalPackages`: count of packages with a computable Instability (those appearing in at least one edge)
 
@@ -71,3 +86,8 @@ Dependencies: Go stdlib only. No third-party modules.
 |Given a Go file with invalid syntax in a package that would otherwise be a Pain-zone candidate - When checked - Then that file is recorded in `Report.Skipped` and the rest of the module is still checked|Exception|unit test: `internal/abstractness/abstractness_test.go: TestCheck_SkipsUnparsableFile`|
 |Given the `legacydb` fixture - When run as `boy-scout go abstractness --format=json` via the CLI - Then stdout is valid JSON containing the Pain-zone entry and exit code is 1|Normal|unit test: `cmd/boy-scout/main_test.go: TestRunGoAbstractness_JSONOutput`|
 |Given the `legacydb` fixture - When run as `boy-scout go all` - Then the combined report's `abstractness` field contains the Pain-zone entry and the combined exit code is 1|Normal|unit test: `cmd/boy-scout/main_test.go: TestRunGoAll_IncludesAbstractness`|
+|Given package `legacydb` (6 exported structs, 0 unexported → SurfaceRatio=1.0) - When `abstractness.CheckWithSurfaceRatio` runs with default `--min-surface-ratio=0.5` - Then it is flagged as Zone of Pain (shallow — nothing hidden)|Normal|unit test: `internal/abstractness/abstractness_test.go: TestCheck_ShallowPainStillFlagged`|
+|Given package `deepcache` (3 exported structs, ~40 unexported helpers → SurfaceRatio≈0.07; Ca=8, Ce=0 → I=0.0, Pain candidate) - When checked with default `--min-surface-ratio=0.5` - Then it is NOT in `Report.Violations` (deep module — concrete+stable is fine when little is exposed)|Normal|unit test: `internal/abstractness/abstractness_test.go: TestCheck_DeepPainCandidateNotFlagged`|
+|Given the `deepcache` fixture - When checked with `--ignore-deep-module-gate` - Then it IS flagged as Zone of Pain (old Story 2 behavior, for comparison)|Normal|unit test: `internal/abstractness/abstractness_test.go: TestCheck_IgnoreDeepModuleGateRestoresOldBehavior`|
+|Given a package with `SurfaceRatio` exactly `0.5` at default `--min-surface-ratio=0.5` and is a Pain candidate - When checked - Then it IS flagged (boundary: gate uses `>=`, exactly-at-limit still counts as shallow enough)|Boundary|unit test: `internal/abstractness/abstractness_test.go: TestCheck_ExactlyAtMinSurfaceRatioIsFlagged`|
+|Given the `plugini` fixture (Zone of Uselessness) with any `SurfaceRatio` - When checked - Then it is still flagged exactly as Story 2 did (gate does not apply to Uselessness, `SurfaceRatio=0` always for Uselessness rows)|Normal|unit test: `internal/abstractness/abstractness_test.go: TestCheck_UselessnessUnaffectedByGate`|

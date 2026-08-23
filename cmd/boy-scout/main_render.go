@@ -101,8 +101,13 @@ func renderInstabilityJSON(report instability.Report, stdout, stderr io.Writer) 
 // each line prefixed with prefix (e.g. "[abstractness] " when combined with other checks).
 func writeAbstractnessLines(w io.Writer, prefix string, report abstractness.Report) {
 	for _, v := range report.Violations {
-		fmt.Fprintf(w, "%s%s: Zone=%s, Distance=%.3f (A=%.3f, I=%.3f)\n",
-			prefix, v.ImportPath, v.Zone, v.Distance, v.Abstractness, v.Instability)
+		if v.Zone == "Pain" {
+			fmt.Fprintf(w, "%s%s: Zone=%s, Distance=%.3f, SurfaceRatio=%.3f (A=%.3f, I=%.3f)\n",
+				prefix, v.ImportPath, v.Zone, v.Distance, v.SurfaceRatio, v.Abstractness, v.Instability)
+		} else {
+			fmt.Fprintf(w, "%s%s: Zone=%s, Distance=%.3f (A=%.3f, I=%.3f)\n",
+				prefix, v.ImportPath, v.Zone, v.Distance, v.Abstractness, v.Instability)
+		}
 	}
 	for _, f := range report.Skipped {
 		fmt.Fprintf(w, "%sskipped file: %s (%s)\n", prefix, f.File, f.Error)
