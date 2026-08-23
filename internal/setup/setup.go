@@ -3,6 +3,7 @@ package setup
 import (
 	"embed"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,22 +24,28 @@ func assertNoMachineLocalPath(name string, content []byte) {
 	assertf(!strings.Contains(contentStr, "~/workspace"), "embedded %s references a machine-local path; violation explanations must be self-contained", name)
 }
 
+// validateEmbeddedContent checks embedded SKILL.md is valid and non-empty.
+func validateEmbeddedContent(content []byte) {
+	assertf(len(content) > 0, "embedded SKILL.md is empty")
+	assertNoMachineLocalPath("SKILL.md", content)
+	assertf(!strings.Contains(string(content), "gardener"), "embedded SKILL.md still references old tool name 'gardener'")
+	assertf(!strings.Contains(string(content), "go test ./..."), "embedded SKILL.md must not hardcode a language-specific test command; belongs in references/lang/{lang}/index.md")
+}
+
 // Run creates a skill file at baseDir/{prefix}/skills/boy-scout/SKILL.md and copies
 // the boy-scout binary to baseDir/{prefix}/bin/boy-scout. It overwrites if they already exist.
 // It also writes reference files to baseDir/{prefix}/skills/boy-scout/references/.
 // It returns the path to the written skill file.
 func Run(baseDir string, binaryPath string, prefix string) (string, error) {
+	assertf(prefix != "", "prefix must not be empty")
+
 	// Read the embedded SKILL.md template
 	content, err := skillContent.ReadFile("SKILL.md")
 	if err != nil {
 		return "", fmt.Errorf("failed to read embedded skill template: %w", err)
 	}
 
-	assertf(len(content) > 0, "embedded SKILL.md is empty")
-	assertNoMachineLocalPath("SKILL.md", content)
-	assertf(!strings.Contains(string(content), "gardener"), "embedded SKILL.md still references old tool name 'gardener'")
-	assertf(!strings.Contains(string(content), "go test ./..."), "embedded SKILL.md must not hardcode a language-specific test command; belongs in references/lang/{lang}/index.md")
-	assertf(prefix != "", "prefix must not be empty")
+	validateEmbeddedContent(content)
 
 	// Build the target paths
 	skillPath := filepath.Join(baseDir, prefix, "skills", "boy-scout", "SKILL.md")
@@ -103,6 +110,16 @@ func writeReferenceFiles(skillDir string) error {
 	return writeReferenceFilesRecursive("references", refDir)
 }
 
+func processReferenceEntry(srcDir, dstDir string, entry fs.DirEntry) error {
+	srcPath := filepath.Join(srcDir, entry.Name())
+	dstPath := filepath.Join(dstDir, entry.Name())
+
+	if entry.IsDir() {
+		return processReferenceDir(srcPath, dstPath)
+	}
+	return writeReferenceFile(srcPath, dstPath, entry.Name())
+}
+
 func writeReferenceFilesRecursive(srcDir, dstDir string) error {
 	entries, err := skillContent.ReadDir(srcDir)
 	if err != nil {
@@ -110,17 +127,8 @@ func writeReferenceFilesRecursive(srcDir, dstDir string) error {
 	}
 
 	for _, entry := range entries {
-		srcPath := filepath.Join(srcDir, entry.Name())
-		dstPath := filepath.Join(dstDir, entry.Name())
-
-		if entry.IsDir() {
-			if err := processReferenceDir(srcPath, dstPath); err != nil {
-				return err
-			}
-		} else {
-			if err := writeReferenceFile(srcPath, dstPath, entry.Name()); err != nil {
-				return err
-			}
+		if err := processReferenceEntry(srcDir, dstDir, entry); err != nil {
+			return err
 		}
 	}
 
