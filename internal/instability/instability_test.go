@@ -292,6 +292,118 @@ func TestCheck_EqualInstabilityIsCompliant(t *testing.T) {
 	}
 }
 
+// TestBuildGraph_ExcludesTestFileImports tests that _test.go file imports are excluded from the graph
+func TestBuildGraph_ExcludesTestFileImports(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create payment package
+	paymentDir := filepath.Join(tempDir, "pkg", "payment")
+	os.MkdirAll(paymentDir, 0755)
+	if err := os.WriteFile(filepath.Join(paymentDir, "payment.go"), []byte("package payment\n\ntype Service struct{}\n\nfunc (s Service) Pay(a int) bool { return a > 0 }\n"), 0644); err != nil {
+		t.Fatalf("failed to write payment.go: %v", err)
+	}
+
+	// Create mocks package
+	mocksDir := filepath.Join(tempDir, "pkg", "mocks")
+	os.MkdirAll(mocksDir, 0755)
+	if err := os.WriteFile(filepath.Join(mocksDir, "mocks.go"), []byte("package mocks\n\ntype FakePayment struct{}\n\nfunc New() FakePayment { return FakePayment{} }\n"), 0644); err != nil {
+		t.Fatalf("failed to write mocks.go: %v", err)
+	}
+
+	// Create order package with production code importing payment
+	orderDir := filepath.Join(tempDir, "pkg", "order")
+	os.MkdirAll(orderDir, 0755)
+	if err := os.WriteFile(filepath.Join(orderDir, "order.go"), []byte("package order\n\nimport \"example.com/test/pkg/payment\"\n\ntype Order struct{ p payment.Service }\n\nfunc (o Order) Checkout(a int) bool { return o.p.Pay(a) }\n"), 0644); err != nil {
+		t.Fatalf("failed to write order.go: %v", err)
+	}
+
+	// Create order_test.go that imports mocks (should be excluded)
+	if err := os.WriteFile(filepath.Join(orderDir, "order_test.go"), []byte("package order\n\nimport (\n\t\"testing\"\n\n\t\"example.com/test/pkg/mocks\"\n)\n\nfunc TestCheckout(t *testing.T) { _ = mocks.New() }\n"), 0644); err != nil {
+		t.Fatalf("failed to write order_test.go: %v", err)
+	}
+
+	graph, err := BuildGraph([]string{tempDir}, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify: only order -> payment edge, no edge to mocks
+	if len(graph.Edges) != 1 {
+		t.Fatalf("expected 1 edge (order -> payment only), got %d edges: %v", len(graph.Edges), graph.Edges)
+	}
+
+	edge := graph.Edges[0]
+	if edge.Source != "example.com/test/pkg/order" || edge.Target != "example.com/test/pkg/payment" {
+		t.Fatalf("expected edge order -> payment, got %s -> %s", edge.Source, edge.Target)
+	}
+
+	// Verify: mocks package is not in the graph
+	if _, exists := graph.Packages["example.com/test/pkg/mocks"]; exists {
+		t.Fatalf("mocks package should not exist in graph (no edge references it)")
+	}
+}
+
+// TestBuildGraph_TestOnlyDirectoryProducesNoNode tests that a directory with only _test.go produces no graph node
+func TestBuildGraph_TestOnlyDirectoryProducesNoNode(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create a legitimate production package that will be imported
+	prodDir := filepath.Join(tempDir, "pkg", "prod")
+	os.MkdirAll(prodDir, 0755)
+	if err := os.WriteFile(filepath.Join(prodDir, "prod.go"), []byte("package prod\n\nfunc Prod() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write prod.go: %v", err)
+	}
+
+	// Create a consumer package that imports prod (to create an edge)
+	consumerDir := filepath.Join(tempDir, "pkg", "consumer")
+	os.MkdirAll(consumerDir, 0755)
+	if err := os.WriteFile(filepath.Join(consumerDir, "consumer.go"), []byte("package consumer\n\nimport \"example.com/test/pkg/prod\"\n\nfunc Consume() { prod.Prod() }\n"), 0644); err != nil {
+		t.Fatalf("failed to write consumer.go: %v", err)
+	}
+
+	// Create foo_test package with only _test.go files (no production code)
+	// This imports prod but only in test code, so the import should be ignored
+	testDir := filepath.Join(tempDir, "pkg", "foo_export_test")
+	os.MkdirAll(testDir, 0755)
+	if err := os.WriteFile(filepath.Join(testDir, "foo_test.go"), []byte("package foo_test\n\nimport \"example.com/test/pkg/prod\"\n\nfunc TestFoo(t *testing.T) { _ = prod.Prod() }\n"), 0644); err != nil {
+		t.Fatalf("failed to write foo_test.go: %v", err)
+	}
+
+	graph, err := BuildGraph([]string{tempDir}, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify: foo_test directory is not in the graph (only _test.go, so no files, no edges)
+	if _, exists := graph.Packages["example.com/test/pkg/foo_export_test"]; exists {
+		t.Fatalf("test-only package should not exist in graph")
+	}
+
+	// Verify: graph contains only prod and consumer (foo_test is excluded)
+	if len(graph.Packages) != 2 {
+		t.Fatalf("expected 2 packages (prod, consumer), got %d: %v", len(graph.Packages), graph.Packages)
+	}
+
+	// Verify: exactly one edge (consumer -> prod)
+	if len(graph.Edges) != 1 {
+		t.Fatalf("expected 1 edge (consumer -> prod), got %d", len(graph.Edges))
+	}
+
+	if graph.Edges[0].Source != "example.com/test/pkg/consumer" || graph.Edges[0].Target != "example.com/test/pkg/prod" {
+		t.Fatalf("expected edge consumer -> prod, got %s -> %s", graph.Edges[0].Source, graph.Edges[0].Target)
+	}
+}
+
 // TestCheck_MinGapFiltersListNotSummary tests that min-gap filters violations but not summary stats
 func TestCheck_MinGapFiltersListNotSummary(t *testing.T) {
 	tempDir := t.TempDir()

@@ -20,3 +20,4 @@ The first check implemented is instability, which flags packages that are stable
 ## Stories
 - [instability](./instability.md)
 - [abstractness](./abstractness.md)
+- [exclude-test-files-from-dependency-graph](./exclude-test-files-from-dependency-graph.md)

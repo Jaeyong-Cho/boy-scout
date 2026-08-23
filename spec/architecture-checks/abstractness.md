@@ -21,6 +21,7 @@ The `boy-scout go abstractness` subcommand:
 - Scans exactly one Go module per invocation (same as instability check)
 - Only first-party packages with at least one internal import edge are analyzed
 - Packages with no internal edges (isolated, `Ca = Ce = 0`) are skipped — Instability undefined
+- `_test.go` files never contribute to a package's `Files` list (inherited from `instability.BuildGraph`), so `TestXxx`/`BenchmarkXxx`/`ExampleXxx` functions are never counted toward `SurfaceRatio` or `Abstractness`
 
 ### Abstractness formula
 For a package P:

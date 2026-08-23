@@ -156,6 +156,9 @@ func BuildGraph(paths []string, opts Options) (Graph, error) {
 	dirToPackage := make(map[string]string)
 
 	for _, filePath := range filesToCheck {
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filePath, nil, parser.ImportsOnly)
 		if err != nil {

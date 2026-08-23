@@ -22,6 +22,7 @@ The `boy-scout go instability` subcommand:
 - Module unit = Go package (a directory of `.go` files under one import path)
 - Only first-party packages count (packages under the scanned module's own `go.mod` `module` path)
 - Stdlib and third-party imports are invisible to the graph — not counted toward instability, never appear as nodes
+- `_test.go` files are excluded from both the file list and the import scan for a package
 
 ### Instability formula
 For a package P:
