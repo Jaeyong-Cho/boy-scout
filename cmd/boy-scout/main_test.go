@@ -878,3 +878,185 @@ func TestRun_AllIncludesInstability(t *testing.T) {
 		t.Error("expected instability field in combined report")
 	}
 }
+
+// TestRun_InstabilityIgnoresTestOnlyImports is a full-CLI-pipeline regression test
+// (run() -> flag parsing -> instability.BuildGraph -> JSON encode) for the
+// AST-based dependency graph fix.
+// Given: order.go imports payment (real), order_test.go imports mocks (test-only)
+// When: `boy-scout go instability --format=json` runs on the module
+// Then: TotalEdges must be 1 (order->payment only); mocks must never appear as a target
+// NOTE: expected to FAIL until instability.BuildGraph excludes _test.go files.
+func TestRun_InstabilityIgnoresTestOnlyImports(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeGoFile(t, tmpDir, "go.mod", "module fixture\n\ngo 1.24\n")
+
+	paymentDir := filepath.Join(tmpDir, "pkg", "payment")
+	orderDir := filepath.Join(tmpDir, "pkg", "order")
+	mocksDir := filepath.Join(tmpDir, "pkg", "mocks")
+	for _, d := range []string{paymentDir, orderDir, mocksDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatalf("MkdirAll(%s) failed: %v", d, err)
+		}
+	}
+
+	writeGoFile(t, paymentDir, "payment.go", `package payment
+
+type Service struct{}
+
+func (s Service) Pay(amount int) bool { return amount > 0 }
+`)
+	writeGoFile(t, mocksDir, "mocks.go", `package mocks
+
+type FakePayment struct{}
+
+func New() FakePayment { return FakePayment{} }
+`)
+	writeGoFile(t, orderDir, "order.go", `package order
+
+import "fixture/pkg/payment"
+
+type Order struct {
+	p payment.Service
+}
+
+func (o Order) Checkout(amount int) bool { return o.p.Pay(amount) }
+`)
+	writeGoFile(t, orderDir, "order_test.go", `package order
+
+import (
+	"testing"
+
+	"fixture/pkg/mocks"
+)
+
+func TestCheckout(t *testing.T) {
+	_ = mocks.New()
+}
+`)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "instability", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+	if exitCode == 2 {
+		t.Fatalf("expected instability command to run, got exit code 2\nstderr: %s", stderrBuf.String())
+	}
+
+	var report struct {
+		TotalEdges int
+	}
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
+	}
+
+	if report.TotalEdges != 1 {
+		t.Errorf("expected TotalEdges=1 (order->payment only, order_test.go's mocks import excluded), got %d", report.TotalEdges)
+	}
+	if strings.Contains(stdoutBuf.String(), "mocks") {
+		t.Errorf("expected no reference to test-only dependency 'mocks' in output, got:\n%s", stdoutBuf.String())
+	}
+}
+
+// TestRun_AbstractnessIgnoresTestFuncsAsExported is a full-CLI-pipeline regression
+// test for the same fix, on the abstractness side: TestXxx functions in _test.go
+// files must not count toward SurfaceRatio's "exported declarations" count.
+// Given: deepcache is a genuine deep module (3 exported types, ~21 unexported
+// funcs/types) with 25 TestBehaviorN funcs in deepcache_test.go, and 8 caller
+// packages depend on it (Ca=8, Ce=0 -> Zone of Pain candidate)
+// When: `boy-scout go abstractness --format=json` runs
+// Then: deepcache must NOT be reported as a violation (it's a deep module; the
+// 25 TestBehaviorN funcs must not inflate SurfaceRatio past the 0.5 gate)
+// NOTE: expected to FAIL until abstractness's underlying graph excludes _test.go files.
+func TestRun_AbstractnessIgnoresTestFuncsAsExported(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeGoFile(t, tmpDir, "go.mod", "module example.com/cache\n\ngo 1.24\n")
+
+	deepcacheDir := filepath.Join(tmpDir, "deepcache")
+	if err := os.MkdirAll(deepcacheDir, 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	writeGoFile(t, deepcacheDir, "deepcache.go", `package deepcache
+
+type Cache struct {
+	data map[string]interface{}
+	lock interface{}
+}
+
+type Config struct {
+	MaxSize int
+}
+
+type Stats struct {
+	Hits   int
+	Misses int
+}
+
+func (c *Cache) get(key string) interface{}        { return nil }
+func (c *Cache) set(key string, val interface{})   {}
+func (c *Cache) evict(key string)                  {}
+func (c *Cache) findLRU() string                   { return "" }
+func (c *Cache) updateLRU(key string)              {}
+func (c *Cache) marshal(v interface{}) []byte      { return nil }
+func (c *Cache) unmarshal(data []byte) interface{} { return nil }
+func (c *Cache) compress(data []byte) []byte       { return nil }
+func (c *Cache) decompress(data []byte) []byte     { return nil }
+
+type lruNode struct{ key string }
+type hashBucket struct{ items []lruNode }
+type serializer interface{}
+type compressor interface{}
+
+func newLRUNode(key string) *lruNode  { return nil }
+func newHashBucket() *hashBucket      { return nil }
+func newSerializer() serializer       { return nil }
+func newCompressor() compressor       { return nil }
+func hashKey(key string) uint64       { return 0 }
+func validateKey(key string) error    { return nil }
+func validateSize(sz int) error       { return nil }
+func computeHash(data []byte) uint64  { return 0 }
+func encodeStats(s *Stats) []byte     { return nil }
+func decodeStats(data []byte) *Stats  { return nil }
+func diffStats(s1, s2 *Stats) *Stats  { return nil }
+func mergeStats(s1, s2 *Stats) *Stats { return nil }
+`)
+
+	var testFuncs strings.Builder
+	testFuncs.WriteString("package deepcache\n\nimport \"testing\"\n\n")
+	for i := 1; i <= 25; i++ {
+		fmt.Fprintf(&testFuncs, "func TestBehavior%d(t *testing.T) {}\n", i)
+	}
+	writeGoFile(t, deepcacheDir, "deepcache_test.go", testFuncs.String())
+
+	for i := 1; i <= 8; i++ {
+		callerDir := filepath.Join(tmpDir, fmt.Sprintf("caller%d", i))
+		if err := os.MkdirAll(callerDir, 0755); err != nil {
+			t.Fatalf("MkdirAll failed: %v", err)
+		}
+		writeGoFile(t, callerDir, fmt.Sprintf("caller%d.go", i), fmt.Sprintf(`package caller%d
+
+import "example.com/cache/deepcache"
+
+func Call%d(cfg deepcache.Config) {
+	_ = cfg
+}
+`, i, i))
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	run([]string{"go", "abstractness", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	var report struct {
+		Violations []struct {
+			ImportPath   string
+			SurfaceRatio float64
+		}
+	}
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
+	}
+
+	for _, v := range report.Violations {
+		if v.ImportPath == "example.com/cache/deepcache" {
+			t.Errorf("deepcache is a deep module and should not be flagged, got SurfaceRatio=%f (25 TestBehaviorN funcs likely miscounted as exported)", v.SurfaceRatio)
+		}
+	}
+}
