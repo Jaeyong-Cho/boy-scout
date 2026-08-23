@@ -11,6 +11,7 @@ import (
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/gofunclen"
 	"boy-scout/internal/instability"
+	"boy-scout/internal/tsfunclen"
 )
 
 // writeCrapLines writes a crap report's violations and excluded entries to w,
@@ -225,6 +226,32 @@ func renderCppFunclenText(report cppfunclen.Report, stdout, stderr io.Writer) in
 }
 
 func renderCppFunclenJSON(report cppfunclen.Report, stdout, stderr io.Writer) int {
+	data, err := json.Marshal(report)
+	assertf(err == nil, "json.Marshal failed: %v", err)
+
+	fmt.Fprintf(stdout, "%s\n", string(data))
+
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+// writeTsFunclenLines writes a ts funclen report's violations and excluded entries to w.
+func writeTsFunclenLines(w io.Writer, prefix string, report tsfunclen.Report) {
+	for _, v := range report.Violations {
+		fmt.Fprintf(w, "%s%s:%d: function %s is %d lines (limit %d)\n",
+			prefix, v.File, v.Line, v.Func, v.Length, v.Limit)
+	}
+	for _, exc := range report.ExcludedFuncs {
+		fmt.Fprintf(w, "%s%s: function %s excluded (%s)\n",
+			prefix, exc.File, exc.Func, exc.Reason)
+	}
+}
+
+func renderTsFunclenText(report tsfunclen.Report, stdout, stderr io.Writer) int {
+	writeTsFunclenLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderTsFunclenJSON(report tsfunclen.Report, stdout, stderr io.Writer) int {
 	data, err := json.Marshal(report)
 	assertf(err == nil, "json.Marshal failed: %v", err)
 

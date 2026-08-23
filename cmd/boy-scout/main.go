@@ -95,12 +95,16 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 		"instability":   runCppInstability,
 		"abstractness":  runCppAbstractness,
 	},
+	"ts": {
+		"funclen": runTsFunclen,
+		"filelen": runTsFilelen,
+	},
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: boy-scout <lang> <command> [options] [paths...]")
-		fmt.Fprintln(stderr, "languages: go")
+		fmt.Fprintln(stderr, "languages: go, cpp, ts")
 		fmt.Fprintln(stderr, "boy-scout setup [claude|copilot|pi|agents] [--global]")
 		return 2
 	}
