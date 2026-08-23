@@ -14,30 +14,46 @@ func main() {
 	changelogFlag := flag.Bool("changelog", false, "print changelog entry instead of version")
 	flag.Parse()
 
-	// Get the last git tag.
-	lastTagCmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
-	tagOutput, err := lastTagCmd.Output()
-	lastTag := strings.TrimSpace(string(tagOutput))
-
-	// If there's no tag, that's OK; we treat it as "no prior tag".
+	lastTag := getLastTag()
+	subjects, err := getCommitSubjects(lastTag)
 	if err != nil {
-		lastTag = ""
+		os.Exit(1)
 	}
 
-	// Get commit subjects since the last tag (or all of HEAD if no tag).
+	next, ok := release.NextVersion(lastTag, subjects)
+	if !ok {
+		fmt.Println("none")
+		return
+	}
+
+	if *changelogFlag {
+		fmt.Print(release.ChangelogEntry(next, subjects))
+		return
+	}
+
+	fmt.Println(next)
+}
+
+func getLastTag() string {
+	lastTagCmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
+	tagOutput, err := lastTagCmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(tagOutput))
+}
+
+func getCommitSubjects(lastTag string) ([]string, error) {
 	var logCmd *exec.Cmd
 	if lastTag == "" {
-		// No prior tag: get all commits.
 		logCmd = exec.Command("git", "log", "--format=%s")
 	} else {
-		// Get commits since the last tag.
 		logCmd = exec.Command("git", "log", lastTag+"..HEAD", "--format=%s")
 	}
 
 	logOutput, err := logCmd.Output()
 	if err != nil {
-		// If the git command fails, print nothing and exit.
-		os.Exit(1)
+		return nil, err
 	}
 
 	var subjects []string
@@ -46,20 +62,5 @@ func main() {
 			subjects = append(subjects, line)
 		}
 	}
-
-	// Compute the next version.
-	next, ok := release.NextVersion(lastTag, subjects)
-	if !ok {
-		fmt.Println("none")
-		os.Exit(0)
-	}
-
-	// If -changelog flag is set, print the changelog entry instead of the version.
-	if *changelogFlag {
-		fmt.Print(release.ChangelogEntry(next, subjects))
-		os.Exit(0)
-	}
-
-	fmt.Println(next)
-	os.Exit(0)
+	return subjects, nil
 }

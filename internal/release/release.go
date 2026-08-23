@@ -42,38 +42,40 @@ const (
 // Precondition: if lastTag is not empty, it must parse to non-negative
 // major/minor/patch integers or be treated as "no tag".
 func NextVersion(lastTag string, commitSubjects []string) (next string, ok bool) {
-	// Parse the last tag to extract major.minor.patch.
-	major, minor, patch := parseTag(lastTag)
+	bump := highestBump(commitSubjects)
+	if bump == bumpNone {
+		return "", false
+	}
 
-	// Classify each commit and determine the highest-priority bump.
+	if lastTag == "" {
+		return "v0.1.0", true
+	}
+
+	major, minor, patch := parseTag(lastTag)
+	return applyBump(major, minor, patch, bump), true
+}
+
+// highestBump finds the highest-priority bump across all commits.
+func highestBump(subjects []string) bumpType {
 	bump := bumpNone
-	for _, subject := range commitSubjects {
+	for _, subject := range subjects {
 		b := classifyCommit(subject)
 		if b > bump {
 			bump = b
 		}
 	}
+	return bump
+}
 
-	// If no bump-worthy commit, return not-ok.
-	if bump == bumpNone {
-		return "", false
-	}
-
-	// If this is the first-ever release (no prior tag), start at v0.1.0.
-	if lastTag == "" {
-		return "v0.1.0", true
-	}
-
-	// Apply the pre-1.0 rule: breaking changes bump minor, not major, when major=0.
+// applyBump increments version components based on bump type,
+// accounting for the pre-1.0 rule: breaking changes bump minor, not major, when major=0.
+func applyBump(major, minor, patch int, bump bumpType) string {
 	if bump == bumpMajor && major == 0 {
 		bump = bumpMinor
 	}
 
-	// Assert the pre-1.0 invariant: after applying the pre-1.0 rule above,
-	// we should never have major==0 and bump==bumpMajor.
-	assertf(major > 0 || bump != bumpMajor, "NextVersion: pre-1.0 tag %s must never bump major on a breaking-change commit", lastTag)
+	assertf(major > 0 || bump != bumpMajor, "applyBump: major=0 must never have bump=bumpMajor")
 
-	// Compute the next version based on the bump type.
 	switch bump {
 	case bumpPatch:
 		patch++
@@ -86,7 +88,7 @@ func NextVersion(lastTag string, commitSubjects []string) (next string, ok bool)
 		patch = 0
 	}
 
-	return fmt.Sprintf("v%d.%d.%d", major, minor, patch), true
+	return fmt.Sprintf("v%d.%d.%d", major, minor, patch)
 }
 
 // parseTag parses a version string in the form vMAJOR.MINOR.PATCH.
@@ -128,68 +130,42 @@ func parseTag(tag string) (major, minor, patch int) {
 // The pattern matches: <type>(<scope>)?!?: <description>
 // Keep in sync with .githooks/commit-msg if the Conventional Commits convention changes.
 func classifyCommit(subject string) bumpType {
-	// Ignore Merge and Revert subjects.
 	if strings.HasPrefix(subject, "Merge ") || strings.HasPrefix(subject, "Revert ") {
 		return bumpNone
 	}
 
-	// Match Conventional Commits format: type(scope)?!?: description
-	// Types: feat, fix, docs, style, refactor, perf, test, chore
-	// Keep in sync with .githooks/commit-msg if the Conventional Commits convention changes.
+	commitType, hasBreaking := parseCommitType(subject)
+	if hasBreaking {
+		return bumpMajor
+	}
+
+	switch commitType {
+	case "feat":
+		return bumpMinor
+	case "fix":
+		return bumpPatch
+	default:
+		return bumpNone
+	}
+}
+
+// parseCommitType extracts the commit type and breaking-change marker from a subject.
+// Returns ("", false) if the subject doesn't match Conventional Commits format.
+func parseCommitType(subject string) (typ string, hasBreaking bool) {
 	re := regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|chore)(\([a-z0-9-]+\))?(!)?:`)
 	matches := re.FindStringSubmatch(subject)
 	if matches == nil {
-		return bumpNone
+		return "", false
 	}
-
-	commitType := matches[1]
-	hasBreaking := matches[3] != "" // The ! marker
-
-	// Determine bump based on type.
-	switch commitType {
-	case "feat":
-		if hasBreaking {
-			return bumpMajor
-		}
-		return bumpMinor
-	case "fix":
-		if hasBreaking {
-			return bumpMajor
-		}
-		return bumpPatch
-	default:
-		// docs, chore, etc. don't trigger a bump.
-		return bumpNone
-	}
+	return matches[1], matches[3] != ""
 }
 
 // ChangelogEntry returns a Markdown section for a given version and commit
 // subjects, grouping feat/fix commits under "Features" and "Fixes" headers.
 // Subjects of other types (docs, chore, etc.) are excluded from the output.
 func ChangelogEntry(version string, commitSubjects []string) string {
-	var features, fixes []string
+	features, fixes := groupCommits(commitSubjects)
 
-	for _, subject := range commitSubjects {
-		// Extract the commit type.
-		re := regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|chore)(\([a-z0-9-]+\))?(!)?:\s*(.+)$`)
-		matches := re.FindStringSubmatch(subject)
-		if matches == nil {
-			continue
-		}
-
-		commitType := matches[1]
-		description := matches[4]
-
-		// Group by type; ignore non-user-visible types.
-		switch commitType {
-		case "feat":
-			features = append(features, description)
-		case "fix":
-			fixes = append(fixes, description)
-		}
-	}
-
-	// Build the Markdown entry.
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## %s\n\n", version)
 
@@ -210,4 +186,28 @@ func ChangelogEntry(version string, commitSubjects []string) string {
 	}
 
 	return sb.String()
+}
+
+// groupCommits groups commit subjects into features and fixes by type.
+func groupCommits(subjects []string) (features, fixes []string) {
+	re := regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|chore)(\([a-z0-9-]+\))?(!)?:\s*(.+)$`)
+
+	for _, subject := range subjects {
+		matches := re.FindStringSubmatch(subject)
+		if matches == nil {
+			continue
+		}
+
+		commitType := matches[1]
+		description := matches[4]
+
+		switch commitType {
+		case "feat":
+			features = append(features, description)
+		case "fix":
+			fixes = append(fixes, description)
+		}
+	}
+
+	return features, fixes
 }

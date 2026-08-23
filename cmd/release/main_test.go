@@ -10,6 +10,23 @@ import (
 	"testing"
 )
 
+// TestGetCommitSubjects_ParsesGitOutput verifies that getCommitSubjects filters
+// empty lines and returns a clean subject list.
+func TestGetCommitSubjects_ParsesGitOutput(t *testing.T) {
+	subjects, err := getCommitSubjects("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(subjects) == 0 {
+		t.Errorf("expected non-empty subjects, got empty list")
+	}
+	for _, s := range subjects {
+		if s == "" {
+			t.Errorf("unexpected empty subject in list")
+		}
+	}
+}
+
 // TestMain_PrintsVersionOrNone verifies that cmd/release prints a version
 // matching ^v[0-9]+\.[0-9]+\.[0-9]+$ or the literal "none".
 func TestMain_PrintsVersionOrNone(t *testing.T) {

@@ -104,3 +104,15 @@ func TestChangelogEntry_GroupsByType(t *testing.T) {
 		t.Errorf("ChangelogEntry should not include chore commits; got:\n%s", entry)
 	}
 }
+
+// TestNextVersion_BreakingPost1_0BumpsMajor verifies that on v1.0+, a breaking-change
+// commit bumps major (not minor, unlike pre-1.0).
+func TestNextVersion_BreakingPost1_0BumpsMajor(t *testing.T) {
+	next, ok := release.NextVersion("v1.5.3", []string{"feat!: remove old API"})
+	if !ok {
+		t.Fatal("NextVersion should return ok=true for bump-worthy commits")
+	}
+	if next != "v2.0.0" {
+		t.Errorf("NextVersion: got %q, want v2.0.0 (major bump for v1+)", next)
+	}
+}
