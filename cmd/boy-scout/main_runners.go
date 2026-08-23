@@ -272,29 +272,47 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 
 // checkAll runs all checks with shared options.
 func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, instability.Report, abstractness.Report, error) {
-	gofunclenReport, err := checkAllGofunclen(paths, excludeFiles, excludeFuncs, debug)
-	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
+	var (
+		gofunclenReport   gofunclen.Report
+		crapReport        crap.Report
+		filelenReport     filelen.Report
+		instabilityReport instability.Report
+		abstractnessReport abstractness.Report
+	)
+
+	// Collect checks as closures to reduce branching complexity
+	checks := []func() error{
+		func() error {
+			var err error
+			gofunclenReport, err = checkAllGofunclen(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			crapReport, err = checkAllCrap(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			filelenReport, err = checkAllFilelen(paths, excludeFiles, debug)
+			return err
+		},
+		func() error {
+			var err error
+			instabilityReport, err = checkAllInstability(paths, excludeFiles, debug)
+			return err
+		},
+		func() error {
+			var err error
+			abstractnessReport, err = checkAllAbstractness(paths, excludeFiles, debug)
+			return err
+		},
 	}
 
-	crapReport, err := checkAllCrap(paths, excludeFiles, excludeFuncs, debug)
-	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
-	}
-
-	filelenReport, err := checkAllFilelen(paths, excludeFiles, debug)
-	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
-	}
-
-	instabilityReport, err := checkAllInstability(paths, excludeFiles, debug)
-	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
-	}
-
-	abstractnessReport, err := checkAllAbstractness(paths, excludeFiles, debug)
-	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return gofunclenReport, crapReport, filelenReport, instabilityReport, abstractnessReport, err
+		}
 	}
 
 	return gofunclenReport, crapReport, filelenReport, instabilityReport, abstractnessReport, nil

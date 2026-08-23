@@ -77,19 +77,34 @@ func assertf(cond bool, format string, args ...any) {
 // findModuleRoot walks upward from path looking for go.mod, returning (root, moduleName, error).
 // Returns error if no go.mod is found by the filesystem root.
 func findModuleRoot(path string) (root, moduleName string, err error) {
+	absPath, err := normalizeAndValidatePath(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	return searchForGoMod(absPath)
+}
+
+// normalizeAndValidatePath resolves path to an absolute directory path.
+func normalizeAndValidatePath(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve path: %w", err)
+		return "", fmt.Errorf("failed to resolve path: %w", err)
 	}
 
 	stat, err := os.Stat(absPath)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to stat path: %w", err)
+		return "", fmt.Errorf("failed to stat path: %w", err)
 	}
 	if !stat.IsDir() {
 		absPath = filepath.Dir(absPath)
 	}
 
+	return absPath, nil
+}
+
+// searchForGoMod walks upward from absPath looking for go.mod.
+func searchForGoMod(absPath string) (string, string, error) {
 	for {
 		gomodPath := filepath.Join(absPath, "go.mod")
 		if _, err := os.Stat(gomodPath); err == nil {
