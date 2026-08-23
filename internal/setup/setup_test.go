@@ -421,10 +421,10 @@ func TestRun_TemplateDeclaresFixCapAndPriority(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"CapAtFive", "Cap each run at 5 violations"},
+		{"CapPerType", "Fix one violation per violation-type per run"},
 		{"SeverityWorstFirst", "highest number first"},
 		{"TestFilesDeferredLast", "deferred to the end of the list"},
-		{"CapSkippedDistinctFromUnresolved", "skipped by the cap"},
+		{"ExampleMultipleViolationTypes", "one per kind"},
 	}
 
 	for _, c := range cases {
@@ -588,7 +588,7 @@ func TestRun_TemplateOrdersDuplicationBySamePackageVsCrossPackage(t *testing.T) 
 	}
 }
 
-func TestRun_TemplateStatesClusterCountsAsOneAgainstCap(t *testing.T) {
+func TestRun_TemplateStatesClusterCountsAsOnePerType(t *testing.T) {
 	baseDir := t.TempDir()
 
 	path, err := Run(baseDir, "", ".agents")
@@ -602,9 +602,9 @@ func TestRun_TemplateStatesClusterCountsAsOneAgainstCap(t *testing.T) {
 	}
 	contentStr := string(content)
 
-	// Check that the cap paragraph states a duplication cluster counts as 1 against the 5-cap
-	if !strings.Contains(contentStr, "A duplication cluster counts as 1 against the 5-violation cap") {
-		t.Errorf("expected skill template to state cluster counts as 1 against cap, got:\n%s", contentStr)
+	// Check that the cap paragraph states one violation per type per run
+	if !strings.Contains(contentStr, "Fix one violation per violation-type per run") {
+		t.Errorf("expected skill template to state one violation per type per run, got:\n%s", contentStr)
 	}
 }
 
