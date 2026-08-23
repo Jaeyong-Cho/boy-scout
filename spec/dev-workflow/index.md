@@ -16,3 +16,4 @@ Every Story below shipped.
 
 ## Stories
 - [commit-convention-and-hooks](./commit-convention-and-hooks.md)
+- [github-ci](./github-ci.md)
