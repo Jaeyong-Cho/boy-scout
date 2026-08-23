@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"boy-scout/internal/abstractness"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/crap"
 	"boy-scout/internal/filelen"
@@ -138,6 +139,37 @@ func runGoInstability(args []string, stdout, stderr io.Writer) int {
 	return renderInstabilityText(report, stdout, stderr)
 }
 
+func runGoAbstractness(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("abstractness", flag.ContinueOnError)
+	minDistance := fs.Float64("min-distance", 0.5, "minimum distance from main sequence to report (packages with |signedD| > min-distance)")
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "unused (abstractness has no function-level concept)")
+	debug := fs.Bool("debug", false, "unused")
+
+	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	opts := abstractness.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        *debug,
+	}
+
+	report, err := abstractness.Check(paths, *minDistance, opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	if *format == "json" {
+		return renderAbstractnessJSON(report, stdout, stderr)
+	}
+	return renderAbstractnessText(report, stdout, stderr)
+}
+
 func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("filelen", flag.ContinueOnError)
 	maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
@@ -214,7 +246,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	gofunclenReport, crapReport, filelenReport, instabilityReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	gofunclenReport, crapReport, filelenReport, instabilityReport, abstractnessReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
@@ -225,6 +257,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		Crap:        crapReport,
 		Filelen:     filelenReport,
 		Instability: instabilityReport,
+		Abstractness: abstractnessReport,
 	}
 
 	// Render output
@@ -234,8 +267,8 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	return renderAllText(combined, stdout, stderr)
 }
 
-// checkAll runs the gofunclen, crap, filelen, and instability checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, instability.Report, error) {
+// checkAll runs the gofunclen, crap, filelen, instability, and abstractness checks with shared options.
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, instability.Report, abstractness.Report, error) {
 	opts := gofunclen.Options{
 		ExcludeFiles: excludeFiles,
 		ExcludeFuncs: excludeFuncs,
@@ -254,26 +287,35 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 		ExcludeFiles: excludeFiles,
 		Debug:        debug,
 	}
+	abstractnessOpts := abstractness.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
 
 	gofunclenReport, err := gofunclen.Check(paths, 50, opts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
 	}
 
 	crapReport, err := crap.Check(paths, 6.0, crapOpts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
 	}
 
 	filelenReport, err := filelen.Check(paths, 300, []string{".go"}, filelenOpts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
 	}
 
 	instabilityReport, err := instability.Check(paths, 0, instabilityOpts)
 	if err != nil {
-		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, err
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
 	}
 
-	return gofunclenReport, crapReport, filelenReport, instabilityReport, nil
+	abstractnessReport, err := abstractness.Check(paths, 0.5, abstractnessOpts)
+	if err != nil {
+		return gofunclen.Report{}, crap.Report{}, filelen.Report{}, instability.Report{}, abstractness.Report{}, err
+	}
+
+	return gofunclenReport, crapReport, filelenReport, instabilityReport, abstractnessReport, nil
 }

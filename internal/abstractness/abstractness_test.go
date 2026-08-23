@@ -1,0 +1,610 @@
+package abstractness
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// TestCheck_FlagsZoneOfPain tests that a concrete stable package is flagged as Pain.
+// Given: legacydb (6 exported structs, 0 interfaces → A=0.0; Ca=8, Ce=0 → I=0.0)
+// Expected: Zone="Pain", Distance=1.0
+func TestCheck_FlagsZoneOfPain(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/legacy\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create legacydb package: 6 exported structs, no interfaces
+	legacydbDir := filepath.Join(tempDir, "legacydb")
+	os.Mkdir(legacydbDir, 0755)
+
+	legacydbCode := `package legacydb
+
+type UserRow struct{ ID int }
+type OrderRow struct{ ID int }
+type ProductRow struct{ ID int }
+type InvoiceRow struct{ ID int }
+type LogEntry struct{ ID int }
+type ConfigEntry struct{ ID int }
+
+func Query() {}
+`
+
+	if err := os.WriteFile(filepath.Join(legacydbDir, "legacydb.go"), []byte(legacydbCode), 0644); err != nil {
+		t.Fatalf("failed to write legacydb.go: %v", err)
+	}
+
+	// Create 8 caller packages importing legacydb
+	for i := 1; i <= 8; i++ {
+		callerDir := filepath.Join(tempDir, fmt.Sprintf("caller%d", i))
+		os.Mkdir(callerDir, 0755)
+		callerCode := fmt.Sprintf(`package caller%d
+
+import "example.com/legacy/legacydb"
+
+func Call%d() {
+	legacydb.Query()
+}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(callerDir, fmt.Sprintf("caller%d.go", i)), []byte(callerCode), 0644); err != nil {
+			t.Fatalf("failed to write caller%d: %v", i, err)
+		}
+	}
+
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the legacydb violation
+	var diagnosis *PackageDiagnosis
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/legacy/legacydb" {
+			diagnosis = &report.Violations[i]
+			break
+		}
+	}
+
+	if diagnosis == nil {
+		t.Fatalf("expected legacydb in violations, got: %v", report.Violations)
+	}
+
+	if diagnosis.Zone != "Pain" {
+		t.Fatalf("expected Zone=Pain, got %s", diagnosis.Zone)
+	}
+
+	// A=0.0, I=0.0, signedD = 0.0 + 0.0 - 1.0 = -1.0, Distance = 1.0
+	if fmt.Sprintf("%.1f", diagnosis.Abstractness) != "0.0" {
+		t.Fatalf("expected Abstractness≈0.0, got %.1f", diagnosis.Abstractness)
+	}
+
+	if fmt.Sprintf("%.1f", diagnosis.Distance) != "1.0" {
+		t.Fatalf("expected Distance≈1.0, got %.1f", diagnosis.Distance)
+	}
+}
+
+// TestCheck_FlagsZoneOfUselessness tests that an abstract unstable package is flagged as Uselessness.
+// Given: plugini (3 exported interfaces, 0 structs → A=1.0; Ca=0, Ce=3 → I=1.0)
+// Expected: Zone="Uselessness", Distance=1.0
+func TestCheck_FlagsZoneOfUselessness(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/plugin\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create plugini package: 3 exported interfaces, no structs
+	pluginiDir := filepath.Join(tempDir, "plugini")
+	os.Mkdir(pluginiDir, 0755)
+
+	pluginiCode := `package plugini
+
+type Handler interface {
+	Handle(msg string) error
+}
+
+type Middleware interface {
+	Next(fn func() error) error
+}
+
+type Logger interface {
+	Log(msg string)
+}
+`
+
+	if err := os.WriteFile(filepath.Join(pluginiDir, "plugini.go"), []byte(pluginiCode), 0644); err != nil {
+		t.Fatalf("failed to write plugini.go: %v", err)
+	}
+
+	// Create 3 packages for plugini to import
+	for i := 1; i <= 3; i++ {
+		depDir := filepath.Join(tempDir, fmt.Sprintf("dep%d", i))
+		os.Mkdir(depDir, 0755)
+		depCode := fmt.Sprintf(`package dep%d
+
+func Dep%d() {}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(depDir, fmt.Sprintf("dep%d.go", i)), []byte(depCode), 0644); err != nil {
+			t.Fatalf("failed to write dep%d: %v", i, err)
+		}
+	}
+
+	// plugini imports 3 packages
+	importsCode := `package plugini
+
+import (
+	"example.com/plugin/dep1"
+	"example.com/plugin/dep2"
+	"example.com/plugin/dep3"
+)
+
+func init() {
+	_ = dep1.Dep1
+	_ = dep2.Dep2
+	_ = dep3.Dep3
+}
+`
+	if err := os.WriteFile(filepath.Join(pluginiDir, "plugini_imports.go"), []byte(importsCode), 0644); err != nil {
+		t.Fatalf("failed to write plugini_imports.go: %v", err)
+	}
+
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the plugini violation
+	var diagnosis *PackageDiagnosis
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/plugin/plugini" {
+			diagnosis = &report.Violations[i]
+			break
+		}
+	}
+
+	if diagnosis == nil {
+		t.Fatalf("expected plugini in violations, got: %v", report.Violations)
+	}
+
+	if diagnosis.Zone != "Uselessness" {
+		t.Fatalf("expected Zone=Uselessness, got %s", diagnosis.Zone)
+	}
+
+	// A=1.0, I=1.0, signedD = 1.0 + 1.0 - 1.0 = 1.0, Distance = 1.0
+	if fmt.Sprintf("%.1f", diagnosis.Abstractness) != "1.0" {
+		t.Fatalf("expected Abstractness≈1.0, got %.1f", diagnosis.Abstractness)
+	}
+
+	if fmt.Sprintf("%.1f", diagnosis.Distance) != "1.0" {
+		t.Fatalf("expected Distance≈1.0, got %.1f", diagnosis.Distance)
+	}
+}
+
+// TestCheck_NoViolationWhenAbstractAndStable tests that abstract stable packages are not flagged.
+// Given: stableiface (all exported types are interfaces → A=1.0; Ca=5, Ce=0 → I=0.0, signedD=0)
+// Expected: not in violations
+func TestCheck_NoViolationWhenAbstractAndStable(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/stable\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create stableiface: all exported types are interfaces
+	stableDir := filepath.Join(tempDir, "stableiface")
+	os.Mkdir(stableDir, 0755)
+
+	stableCode := `package stableiface
+
+type Service interface {
+	Do() error
+}
+
+type Provider interface {
+	Provide() Service
+}
+`
+
+	if err := os.WriteFile(filepath.Join(stableDir, "stableiface.go"), []byte(stableCode), 0644); err != nil {
+		t.Fatalf("failed to write stableiface.go: %v", err)
+	}
+
+	// Create 5 packages importing stableiface (Ca=5, Ce=0, I=0.0)
+	for i := 1; i <= 5; i++ {
+		clientDir := filepath.Join(tempDir, fmt.Sprintf("client%d", i))
+		os.Mkdir(clientDir, 0755)
+		clientCode := fmt.Sprintf(`package client%d
+
+import "example.com/stable/stableiface"
+
+func Call%d(svc stableiface.Service) error {
+	return svc.Do()
+}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(clientDir, fmt.Sprintf("client%d.go", i)), []byte(clientCode), 0644); err != nil {
+			t.Fatalf("failed to write client%d: %v", i, err)
+		}
+	}
+
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check that stableiface is NOT in violations
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/stable/stableiface" {
+			t.Fatalf("stableiface should not be flagged (ideal: abstract and stable)")
+		}
+	}
+}
+
+// TestCheck_NoViolationWhenConcreteAndUnstable tests that concrete unstable packages are not flagged.
+// Given: leafimpl (0 interfaces, some structs → A=0.0; Ca=0, Ce=4 → I=1.0, signedD=0)
+// Expected: not in violations
+func TestCheck_NoViolationWhenConcreteAndUnstable(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/leaf\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create leafimpl: concrete (no interfaces), unstable (imports 4, nothing imports it)
+	leafDir := filepath.Join(tempDir, "leafimpl")
+	os.Mkdir(leafDir, 0755)
+
+	leafCode := `package leafimpl
+
+type Config struct {
+	Key   string
+	Value string
+}
+
+type State struct {
+	Data map[string]interface{}
+}
+`
+
+	if err := os.WriteFile(filepath.Join(leafDir, "leafimpl.go"), []byte(leafCode), 0644); err != nil {
+		t.Fatalf("failed to write leafimpl.go: %v", err)
+	}
+
+	// Create 4 packages for leafimpl to import
+	for i := 1; i <= 4; i++ {
+		depDir := filepath.Join(tempDir, fmt.Sprintf("dep%d", i))
+		os.Mkdir(depDir, 0755)
+		depCode := fmt.Sprintf(`package dep%d
+
+func Dep%d() {}
+`, i, i)
+		if err := os.WriteFile(filepath.Join(depDir, fmt.Sprintf("dep%d.go", i)), []byte(depCode), 0644); err != nil {
+			t.Fatalf("failed to write dep%d: %v", i, err)
+		}
+	}
+
+	// leafimpl imports 4 packages
+	importsCode := `package leafimpl
+
+import (
+	"example.com/leaf/dep1"
+	"example.com/leaf/dep2"
+	"example.com/leaf/dep3"
+	"example.com/leaf/dep4"
+)
+
+func init() {
+	_ = dep1.Dep1
+	_ = dep2.Dep2
+	_ = dep3.Dep3
+	_ = dep4.Dep4
+}
+`
+	if err := os.WriteFile(filepath.Join(leafDir, "leafimpl_imports.go"), []byte(importsCode), 0644); err != nil {
+		t.Fatalf("failed to write leafimpl_imports.go: %v", err)
+	}
+
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check that leafimpl is NOT in violations
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/leaf/leafimpl" {
+			t.Fatalf("leafimpl should not be flagged (ideal: concrete and unstable)")
+		}
+	}
+}
+
+// TestCheck_ExactlyAtMinDistanceIsCompliant tests the boundary where signedD is exactly at -minDistance.
+// Given: minDistance=0.5 and a package with signedD=-0.5 (exactly at boundary)
+// Expected: not flagged (strict < comparison)
+func TestCheck_ExactlyAtMinDistanceIsCompliant(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/boundary\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create a package with A=0.0, I=0.5 => signedD = 0.0 + 0.5 - 1.0 = -0.5
+	// To get I=0.5: Ca=1, Ce=1
+	boundaryDir := filepath.Join(tempDir, "boundary")
+	os.Mkdir(boundaryDir, 0755)
+
+	boundaryCode := `package boundary
+
+type Thing struct{}
+
+func Do() {}
+`
+
+	if err := os.WriteFile(filepath.Join(boundaryDir, "boundary.go"), []byte(boundaryCode), 0644); err != nil {
+		t.Fatalf("failed to write boundary.go: %v", err)
+	}
+
+	// Create one package for boundary to import
+	depDir := filepath.Join(tempDir, "dep")
+	os.Mkdir(depDir, 0755)
+	if err := os.WriteFile(filepath.Join(depDir, "dep.go"), []byte("package dep\nfunc Dep() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write dep.go: %v", err)
+	}
+
+	// Make boundary import dep (Ce=1) and be imported by one caller (Ca=1)
+	importsCode := `package boundary
+
+import "example.com/boundary/dep"
+
+func init() {
+	_ = dep.Dep
+}
+`
+	if err := os.WriteFile(filepath.Join(boundaryDir, "boundary_imports.go"), []byte(importsCode), 0644); err != nil {
+		t.Fatalf("failed to write boundary_imports.go: %v", err)
+	}
+
+	// Create a caller importing boundary
+	callerDir := filepath.Join(tempDir, "caller")
+	os.Mkdir(callerDir, 0755)
+	callerCode := `package caller
+
+import "example.com/boundary/boundary"
+
+func Call() {
+	boundary.Do()
+}
+`
+	if err := os.WriteFile(filepath.Join(callerDir, "caller.go"), []byte(callerCode), 0644); err != nil {
+		t.Fatalf("failed to write caller.go: %v", err)
+	}
+
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check that boundary is NOT flagged (exactly at -minDistance boundary)
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/boundary/boundary" {
+			t.Fatalf("package at exactly -minDistance should not be flagged (strict <)")
+		}
+	}
+}
+
+// TestCheck_ZeroExportedTypesUsesAZero tests packages with zero exported types.
+// Given: a package with no exported interfaces/structs
+// Expected: A=0 (no divide-by-zero error)
+func TestCheck_ZeroExportedTypesUsesAZero(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/notypes\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create a package with no exported types (pure functions)
+	noTypesDir := filepath.Join(tempDir, "notypes")
+	os.Mkdir(noTypesDir, 0755)
+
+	noTypesCode := `package notypes
+
+func helper1() {}
+func helper2() {}
+func helper3() {}
+`
+
+	if err := os.WriteFile(filepath.Join(noTypesDir, "notypes.go"), []byte(noTypesCode), 0644); err != nil {
+		t.Fatalf("failed to write notypes.go: %v", err)
+	}
+
+	// Create a caller importing it (to make it part of a graph)
+	callerDir := filepath.Join(tempDir, "caller")
+	os.Mkdir(callerDir, 0755)
+	callerCode := `package caller
+
+import "example.com/notypes/notypes"
+
+func init() {
+	_ = notypes.helper1
+}
+`
+	if err := os.WriteFile(filepath.Join(callerDir, "caller.go"), []byte(callerCode), 0644); err != nil {
+		t.Fatalf("failed to write caller.go: %v", err)
+	}
+
+	// notypes also imports something to create an edge
+	depDir := filepath.Join(tempDir, "dep")
+	os.Mkdir(depDir, 0755)
+	if err := os.WriteFile(filepath.Join(depDir, "dep.go"), []byte("package dep\nfunc Dep() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write dep.go: %v", err)
+	}
+
+	importsCode := `package notypes
+
+import "example.com/notypes/dep"
+
+func init() {
+	_ = dep.Dep
+}
+`
+	if err := os.WriteFile(filepath.Join(noTypesDir, "notypes_imports.go"), []byte(importsCode), 0644); err != nil {
+		t.Fatalf("failed to write notypes_imports.go: %v", err)
+	}
+
+	// Should not panic on divide-by-zero
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the notypes package
+	var diagnosis *PackageDiagnosis
+	for i := range report.Violations {
+		if report.Violations[i].ImportPath == "example.com/notypes/notypes" {
+			diagnosis = &report.Violations[i]
+			break
+		}
+	}
+
+	// If it's flagged, check that Abstractness=0
+	if diagnosis != nil {
+		if diagnosis.Abstractness != 0.0 {
+			t.Fatalf("expected Abstractness=0.0 for zero exported types, got %f", diagnosis.Abstractness)
+		}
+	}
+}
+
+// TestCheck_IsolatedPackageSkipped tests that packages with no internal edges are skipped.
+// Given: a package with Ca=Ce=0 (isolated)
+// Expected: does not appear in violations or TotalPackages count
+func TestCheck_IsolatedPackageSkipped(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/isolated\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create one package with no imports and no importers (isolated)
+	isolatedDir := filepath.Join(tempDir, "isolated")
+	os.Mkdir(isolatedDir, 0755)
+
+	isolatedCode := `package isolated
+
+type IsolatedType struct{}
+
+func Do() {}
+`
+
+	if err := os.WriteFile(filepath.Join(isolatedDir, "isolated.go"), []byte(isolatedCode), 0644); err != nil {
+		t.Fatalf("failed to write isolated.go: %v", err)
+	}
+
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Isolated package should not appear in violations
+	if len(report.Violations) > 0 {
+		t.Fatalf("isolated package should not be flagged, got: %v", report.Violations)
+	}
+
+	// TotalPackages should be 0 (no packages with edges)
+	if report.TotalPackages != 0 {
+		t.Fatalf("expected TotalPackages=0 for isolated package, got %d", report.TotalPackages)
+	}
+}
+
+// TestCheck_SkipsUnparsableFile tests that unparsable files are skipped gracefully.
+// Given: a package with one unparsable file
+// Expected: skipped record added, rest of module still checked
+func TestCheck_SkipsUnparsableFile(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/parseable\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create a package with an unparsable file
+	pkgDir := filepath.Join(tempDir, "pkg")
+	os.Mkdir(pkgDir, 0755)
+
+	validCode := `package pkg
+
+type Thing struct{}
+
+func Do() {}
+`
+
+	if err := os.WriteFile(filepath.Join(pkgDir, "valid.go"), []byte(validCode), 0644); err != nil {
+		t.Fatalf("failed to write valid.go: %v", err)
+	}
+
+	// Write an unparsable file
+	brokenCode := `package pkg
+
+type Broken struct {
+	// missing closing brace
+`
+
+	if err := os.WriteFile(filepath.Join(pkgDir, "broken.go"), []byte(brokenCode), 0644); err != nil {
+		t.Fatalf("failed to write broken.go: %v", err)
+	}
+
+	// Create a caller to put pkg in the graph
+	callerDir := filepath.Join(tempDir, "caller")
+	os.Mkdir(callerDir, 0755)
+	callerCode := `package caller
+
+import "example.com/parseable/pkg"
+
+func Call() {
+	pkg.Do()
+}
+`
+	if err := os.WriteFile(filepath.Join(callerDir, "caller.go"), []byte(callerCode), 0644); err != nil {
+		t.Fatalf("failed to write caller.go: %v", err)
+	}
+
+	report, err := Check([]string{tempDir}, 0.5, Options{})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have skipped the broken file
+	if len(report.Skipped) == 0 {
+		t.Fatal("expected at least one skipped file")
+	}
+
+	found := false
+	for _, skipped := range report.Skipped {
+		if filepath.Base(skipped.File) == "broken.go" {
+			found = true
+			if skipped.Error == "" {
+				t.Fatal("expected skipped file to have an error message")
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("expected broken.go in skipped files")
+	}
+}

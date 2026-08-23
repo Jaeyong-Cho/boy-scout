@@ -38,6 +38,29 @@ type Report struct {
 	WeightedViolationRate float64 // (sum of max(0, Gap) over all edges) / total edges
 }
 
+// PackageStats holds the coupling metrics for a single package.
+type PackageStats struct {
+	Ca          int      // afferent coupling: number of packages importing this one
+	Ce          int      // efferent coupling: number of packages this one imports
+	Instability float64  // Ce / (Ca + Ce); only meaningful when Ca+Ce > 0
+	Files       []string // absolute paths of .go files in this package's directory
+}
+
+// Edge represents a single import edge between two packages.
+type Edge struct {
+	Source string // import path of the package doing the importing
+	Target string // import path of the package being imported
+}
+
+// Graph holds the complete package-import graph for a module.
+type Graph struct {
+	ModuleName string
+	Root       string
+	Packages   map[string]PackageStats // import path -> stats; only packages that appear in an edge
+	Edges      []Edge
+	Skipped    []SkippedFile
+}
+
 func assertf(cond bool, format string, args ...any) {
 	if !cond {
 		panic(fmt.Sprintf(format, args...))
@@ -98,15 +121,13 @@ func findModuleRoot(path string) (root, moduleName string, err error) {
 	}
 }
 
-func Check(paths []string, minGap float64, opts Options) (Report, error) {
-	assertf(minGap >= 0, "minGap must be non-negative, got %f", minGap)
-
-	report := Report{
-		Violations:            []Violation{},
-		Skipped:               []SkippedFile{},
-		TotalEdges:            0,
-		ViolationRate:         0,
-		WeightedViolationRate: 0,
+// BuildGraph constructs the complete package-import graph for a module.
+// Only packages that appear in at least one edge are included in the result.
+func BuildGraph(paths []string, opts Options) (Graph, error) {
+	graph := Graph{
+		Packages: make(map[string]PackageStats),
+		Edges:    []Edge{},
+		Skipped:  []SkippedFile{},
 	}
 
 	// Determine module root and module name
@@ -116,16 +137,21 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 
 	root, moduleName, err := findModuleRoot(paths[0])
 	if err != nil {
-		return report, err
+		return graph, err
 	}
+
+	graph.ModuleName = moduleName
+	graph.Root = root
 
 	// Collect all .go files
 	filesToCheck, _, skipped := srcfiles.Collect(paths, []string{".go"}, opts.ExcludeFiles)
-	report.Skipped = append(report.Skipped, skipped...)
+	graph.Skipped = append(graph.Skipped, skipped...)
 
 	// Parse each file and collect imports, grouping by directory
 	// Map from package import path to set of imports it makes (as strings)
 	packageImports := make(map[string]map[string]bool)
+	// Map from package import path to list of files in that package
+	packageFiles := make(map[string][]string)
 	// Map from directory to package import path
 	dirToPackage := make(map[string]string)
 
@@ -133,7 +159,7 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filePath, nil, parser.ImportsOnly)
 		if err != nil {
-			report.Skipped = append(report.Skipped, SkippedFile{File: filePath, Error: err.Error()})
+			graph.Skipped = append(graph.Skipped, SkippedFile{File: filePath, Error: err.Error()})
 			continue
 		}
 
@@ -150,6 +176,8 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 		if packageImports[pkgImportPath] == nil {
 			packageImports[pkgImportPath] = make(map[string]bool)
 		}
+
+		packageFiles[pkgImportPath] = append(packageFiles[pkgImportPath], filePath)
 
 		// Extract imports
 		for _, spec := range file.Imports {
@@ -180,24 +208,71 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 		}
 	}
 
-	report.TotalEdges = len(edgeSet)
-
-	// Compute instability and violations
-	violations := []Violation{}
-	totalGap := 0.0
-
+	// Build the result graph: only include packages that appear in edges
 	for e := range edgeSet {
 		ca := caferent[e.source]
 		ce := cefferent[e.source]
 		assertf(ca+ce > 0, "Ca+Ce > 0 for package in edge")
-		i_a := float64(ce) / float64(ca+ce)
+		instability := float64(ce) / float64(ca+ce)
+
+		if _, exists := graph.Packages[e.source]; !exists {
+			graph.Packages[e.source] = PackageStats{
+				Ca:          ca,
+				Ce:          ce,
+				Instability: instability,
+				Files:       packageFiles[e.source],
+			}
+		}
 
 		ca_b := caferent[e.target]
 		ce_b := cefferent[e.target]
 		assertf(ca_b+ce_b > 0, "Ca+Ce > 0 for package in edge")
-		i_b := float64(ce_b) / float64(ca_b+ce_b)
+		instability_b := float64(ce_b) / float64(ca_b+ce_b)
 
-		gap := i_b - i_a
+		if _, exists := graph.Packages[e.target]; !exists {
+			graph.Packages[e.target] = PackageStats{
+				Ca:          ca_b,
+				Ce:          ce_b,
+				Instability: instability_b,
+				Files:       packageFiles[e.target],
+			}
+		}
+
+		graph.Edges = append(graph.Edges, Edge{Source: e.source, Target: e.target})
+	}
+
+	return graph, nil
+}
+
+func Check(paths []string, minGap float64, opts Options) (Report, error) {
+	assertf(minGap >= 0, "minGap must be non-negative, got %f", minGap)
+
+	report := Report{
+		Violations:            []Violation{},
+		Skipped:               []SkippedFile{},
+		TotalEdges:            0,
+		ViolationRate:         0,
+		WeightedViolationRate: 0,
+	}
+
+	// Build the graph
+	graph, err := BuildGraph(paths, opts)
+	if err != nil {
+		return report, err
+	}
+
+	report.Skipped = graph.Skipped
+	report.TotalEdges = len(graph.Edges)
+
+	// Compute violations
+	violations := []Violation{}
+	totalGap := 0.0
+
+	for _, e := range graph.Edges {
+		source := graph.Packages[e.Source]
+		target := graph.Packages[e.Target]
+
+		gap := target.Instability - source.Instability
 		if gap > 0 {
 			totalGap += gap
 		}
@@ -205,10 +280,10 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 		if gap > minGap {
 			assertf(gap > minGap, "appended violation has Gap > minGap")
 			violations = append(violations, Violation{
-				Source: e.source,
-				Target: e.target,
-				I_A:    i_a,
-				I_B:    i_b,
+				Source: e.Source,
+				Target: e.Target,
+				I_A:    source.Instability,
+				I_B:    target.Instability,
 				Gap:    gap,
 			})
 		}
@@ -219,14 +294,10 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 	// Compute violation rates
 	if report.TotalEdges > 0 {
 		violationCount := 0
-		for e := range edgeSet {
-			ca := caferent[e.source]
-			ce := cefferent[e.source]
-			i_a := float64(ce) / float64(ca+ce)
-			ca_b := caferent[e.target]
-			ce_b := cefferent[e.target]
-			i_b := float64(ce_b) / float64(ca_b+ce_b)
-			if i_b > i_a {
+		for _, e := range graph.Edges {
+			source := graph.Packages[e.Source]
+			target := graph.Packages[e.Target]
+			if target.Instability > source.Instability {
 				violationCount++
 			}
 		}
