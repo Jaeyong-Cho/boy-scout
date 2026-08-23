@@ -12,10 +12,11 @@ Auto-fix code quality violations from the gardener lint checker.
 
 **Before starting, check the tests are green:** run `go test ./...` once, before touching anything. If it fails, stop immediately and report that tests were already failing before any gardener edit — fix the test suite first, then re-run this skill. Never refactor on top of a red suite; you can't tell your edit from pre-existing breakage.
 
-Run `gardener go all` to find violations. For C++ codebases, run `gardener cpp funclen` instead (C++ has no CRAP check and no `gardener:ignore` comment support yet). For each violation, edit the flagged function (gofunclen violations first, then crap violations). Before editing, state in plain terms which clean-code rule it breaks:
+Run `gardener go all` to find violations. For C++ codebases, run `gardener cpp funclen` instead (C++ has no CRAP check and no `gardener:ignore` comment support yet). For each violation, edit the flagged function or file (gofunclen violations first, then crap violations, then filelen violations — file-level reorganization goes last, since splitting a file shifts every other violation's line number in it). Before editing, state in plain terms which clean-code rule it breaks:
 
 - **gofunclen violation:** the function is too big to hold one level of abstraction — it's doing more than one thing. Fix it by extracting the sub-steps into well-named helper functions, not by just trimming lines.
 - **crap violation:** the function combines high complexity plus low test coverage — nobody can prove a change to it is safe. Fix it by simplifying the logic, backed by a real test.
+- **filelen violation:** the file has grown too big to hold one responsibility — it's mixing multiple concerns. Fix it by splitting into separate files along natural seams, each with high cohesion (one clear job) and loose coupling (minimal knowledge of the others' internals).
 
 For a crap violation, check the coverage percentage already printed in the violation line. If it's 0%, first add one minimal characterization test — a test that pins down what the function does right now, not what it should do — and confirm it passes, before refactoring. If coverage is already above 0%, skip straight to refactoring; the existing tests plus the re-run-after-edit step below are enough of a safety net.
 

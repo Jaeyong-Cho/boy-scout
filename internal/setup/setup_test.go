@@ -282,3 +282,35 @@ func TestRun_UsesGivenPrefixForSkillAndBinPaths(t *testing.T) {
 		t.Errorf("expected .agents directory not to be created when using .claude prefix")
 	}
 }
+
+func TestRun_TemplateDeclaresFilelenGuidance(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	cases := []struct {
+		name   string
+		marker string
+	}{
+		{"FilelenExplainsCleanCodeRule", "mixing multiple concerns"},
+		{"FilelenExplainsCohesionAndCoupling", "loose coupling"},
+		{"FilelenFixedLast", "then filelen violations"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if !strings.Contains(contentStr, c.marker) {
+				t.Errorf("expected skill template to contain %q, got:\n%s", c.marker, contentStr)
+			}
+		})
+	}
+}
