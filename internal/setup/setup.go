@@ -37,6 +37,7 @@ func Run(baseDir string, binaryPath string, prefix string) (string, error) {
 	assertf(len(content) > 0, "embedded SKILL.md is empty")
 	assertNoMachineLocalPath("SKILL.md", content)
 	assertf(!strings.Contains(string(content), "gardener"), "embedded SKILL.md still references old tool name 'gardener'")
+	assertf(!strings.Contains(string(content), "go test ./..."), "embedded SKILL.md must not hardcode a language-specific test command; belongs in references/lang/{lang}/index.md")
 	assertf(prefix != "", "prefix must not be empty")
 
 	// Build the target paths
@@ -139,6 +140,7 @@ func writeReferenceFile(srcPath, dstPath, name string) error {
 		return fmt.Errorf("failed to read file %s: %w", srcPath, err)
 	}
 
+	assertf(len(content) > 0, "embedded reference file %s is empty", name)
 	assertNoMachineLocalPath(name, content)
 
 	if err := os.WriteFile(dstPath, content, 0644); err != nil {
