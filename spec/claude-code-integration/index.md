@@ -17,3 +17,4 @@ The first Story in this EPIC is the `gardener setup` subcommand, which auto-inst
 - [violation-resolve-references](./violation-resolve-references.md)
 - [fix-run-cap-and-priority](./fix-run-cap-and-priority.md)
 - [lang-scoped-violation-references](./lang-scoped-violation-references.md)
+- [cpp-violation-references](./cpp-violation-references.md)

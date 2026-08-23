@@ -1039,3 +1039,35 @@ func TestRun_SetupWritesCapAndPriorityGuidance(t *testing.T) {
 		}
 	}
 }
+
+func TestRun_SetupWritesCppFilelenInstabilityAbstractnessReferences(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "agents"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	refDir := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp")
+	for _, filename := range []string{"filelen.md", "instability.md", "abstractness.md"} {
+		path := filepath.Join(refDir, filename)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %q to exist, got error: %v", filename, err)
+		}
+	}
+}

@@ -17,4 +17,4 @@ Split the file along natural seams, where each concern naturally separates. high
 For a concrete before/after code example in your language:
 
 - **Go:** See `references/lang/go/filelen.md`
-- **C++:** Not yet supported for C++
+- **C++:** See `references/lang/cpp/filelen.md`

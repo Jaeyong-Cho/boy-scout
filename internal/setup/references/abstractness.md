@@ -15,4 +15,4 @@ Extract the stable boundary (the interfaces and types that your dependents actua
 For a concrete before/after code example in your language:
 
 - **Go:** See `references/lang/go/abstractness.md`
-- **C++:** Not yet supported for C++
+- **C++:** See `references/lang/cpp/abstractness.md`

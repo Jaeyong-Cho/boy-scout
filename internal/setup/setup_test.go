@@ -435,3 +435,130 @@ func TestRun_TemplateDeclaresFixCapAndPriority(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_WritesCppFilelenInstabilityAbstractnessReferences(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp")
+	files := []string{"filelen.md", "instability.md", "abstractness.md"}
+
+	for _, filename := range files {
+		path := filepath.Join(refDir, filename)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected cpp reference file %q to exist, got error: %v", filename, err)
+		}
+	}
+}
+
+func TestRun_CppLangReferenceFilesContainCppExamples(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp")
+
+	cases := []struct {
+		name     string
+		filename string
+		marker   string
+	}{
+		{"Filelen", "filelen.md", "#include"},
+		{"Instability", "instability.md", "domain.hpp"},
+		{"Abstractness", "abstractness.md", "pure virtual"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			content, err := os.ReadFile(filepath.Join(refDir, c.filename))
+			if err != nil {
+				t.Fatalf("failed to read %q: %v", c.filename, err)
+			}
+			if !strings.Contains(string(content), c.marker) {
+				t.Errorf("expected %q to contain %q, got:\n%s", c.filename, c.marker, content)
+			}
+		})
+	}
+}
+
+func TestRun_TemplateNoLongerMarksCppFilelenInstabilityAbstractnessUnsupported(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "SKILL.md")
+	content, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read SKILL.md: %v", err)
+	}
+	skillStr := string(content)
+
+	for _, path := range []string{
+		"references/lang/cpp/filelen.md",
+		"references/lang/cpp/instability.md",
+		"references/lang/cpp/abstractness.md",
+	} {
+		if !strings.Contains(skillStr, path) {
+			t.Errorf("expected SKILL.md to reference %q, got:\n%s", path, skillStr)
+		}
+	}
+}
+
+func TestRun_CppIndexListsFilelenInstabilityAbstractness(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	indexPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp", "index.md")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("failed to read cpp index.md: %v", err)
+	}
+	indexStr := string(content)
+
+	for _, marker := range []string{"filelen", "instability", "abstractness"} {
+		if !strings.Contains(indexStr, marker) {
+			t.Errorf("expected cpp index.md to mention %q, got:\n%s", marker, indexStr)
+		}
+	}
+}
+
+func TestRun_TopLevelReferencesPointToCppExamples(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
+
+	cases := map[string]string{
+		"filelen.md":      "references/lang/cpp/filelen.md",
+		"instability.md":  "references/lang/cpp/instability.md",
+		"abstractness.md": "references/lang/cpp/abstractness.md",
+	}
+
+	for filename, wantPath := range cases {
+		content, err := os.ReadFile(filepath.Join(refDir, filename))
+		if err != nil {
+			t.Fatalf("failed to read %q: %v", filename, err)
+		}
+		if !strings.Contains(string(content), wantPath) {
+			t.Errorf("expected %q to reference %q, got:\n%s", filename, wantPath, content)
+		}
+	}
+}
