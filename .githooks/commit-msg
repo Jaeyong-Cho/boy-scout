@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -e
+
+# Exit code 0 if Conventional Commits format is valid or commit is exempt (Merge/Revert)
+# Exit code 1 with error message otherwise
+
+msg_file="$1"
+
+# Read the first line of the commit message
+first_line=$(head -n 1 "$msg_file")
+
+# Check for exempt patterns (Merge, Revert)
+if [[ "$first_line" =~ ^(Merge|Revert) ]]; then
+  exit 0
+fi
+
+# Check for Conventional Commits format: <type>(<scope>)?!?: <description>
+# Types: feat, fix, docs, style, refactor, perf, test, chore
+if [[ "$first_line" =~ ^(feat|fix|docs|style|refactor|perf|test|chore)(\([a-z0-9-]+\))?!?: ]]; then
+  exit 0
+fi
+
+# Format is invalid; print usage and exit 1
+cat >&2 << 'EOF'
+❌ Commit message does not follow Conventional Commits format.
+
+Expected format:
+  <type>(<scope>)?!?: <description>
+
+Types: feat, fix, docs, style, refactor, perf, test, chore
+
+Examples:
+  feat: add new API endpoint
+  fix(parser): handle edge case in tokenizer
+  docs(readme): update installation instructions
+  feat!: breaking API change
+  refactor(core): simplify logic
+
+EOF
+exit 1

@@ -9,5 +9,8 @@
 ## Claude Code Integration
 - [claude-code-integration](./claude-code-integration/index.md)
 
+## Developer workflow
+- [dev-workflow](./dev-workflow/index.md)
+
 ## Multi-language variants
 - [multi-language-variants](./multi-language-variants/index.md)
