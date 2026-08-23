@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Post-merge hook: remind to reinstall if manifest files changed
+
+set -e
+
+# Check if any manifest files were added/modified/deleted
+changed=$(git diff ORIG_HEAD..HEAD --name-only | grep -E '^(go\.mod|go\.sum)$' || true)
+
+if [ -n "$changed" ]; then
+  cat >&2 << 'EOF'
+
+⚠️  Manifest files changed. Reinstall dependencies:
+
+  go mod download
+  make build
+
+EOF
+fi
+
+exit 0
