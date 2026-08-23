@@ -23,14 +23,15 @@ import (
 )
 
 type Violation struct {
-	FileA    string `json:"fileA"`
-	LineA    int    `json:"lineA"`
-	FuncA    string `json:"funcA"`
-	FileB    string `json:"fileB"`
-	LineB    int    `json:"lineB"`
-	FuncB    string `json:"funcB"`
-	Type     string `json:"type"`      // "Type-1" or "Type-2"
-	DupLines int    `json:"dupLines"`  // duplicated line count
+	FileA      string  `json:"fileA"`
+	LineA      int     `json:"lineA"`
+	FuncA      string  `json:"funcA"`
+	FileB      string  `json:"fileB"`
+	LineB      int     `json:"lineB"`
+	FuncB      string  `json:"funcB"`
+	Type       string  `json:"type"`       // "Type-1", "Type-2", or "Type-3"
+	DupLines   int     `json:"dupLines"`   // duplicated line count
+	Similarity float64 `json:"similarity"` // LCS-based similarity (Type-3 only)
 }
 
 // SkippedFile is a type alias for srcfiles.SkippedFile
@@ -213,20 +214,27 @@ func scanFileForDuplication(filePath string, minLines int, opts Options) ([]Func
 	return funcs, excluded, nil
 }
 
-// classifyPair compares two functions and returns their clone type if they match
-func classifyPair(a, b *FuncInfo) (cloneType string) {
+// classifyPair compares two functions and returns their clone type and similarity
+// Type-1: exact raw match, Type-2: exact blind match, Type-3: above-threshold similarity on blind
+// Returns ("", 0.0) if no match at or above minSimilarity
+func classifyPair(a, b *FuncInfo, minSimilarity float64) (cloneType string, similarity float64) {
 	// Check if raw sequences match (Type-1)
 	if sequenceEqual(a.RawSequence, b.RawSequence) {
-		cloneType = "Type-1"
-	} else if sequenceEqual(a.BlindSequence, b.BlindSequence) {
-		cloneType = "Type-2"
+		return "Type-1", 1.0
 	}
 
-	// Assertion: if we classified as a clone, one of the sequences must match
-	assertf(cloneType == "" || sequenceEqual(a.RawSequence, b.RawSequence) || sequenceEqual(a.BlindSequence, b.BlindSequence),
-		"classified as %s but neither raw nor blind sequences match", cloneType)
+	// Check if blind sequences match exactly (Type-2)
+	if sequenceEqual(a.BlindSequence, b.BlindSequence) {
+		return "Type-2", 1.0
+	}
 
-	return cloneType
+	// Check Type-3: compute LCS similarity on blind sequences
+	similarity = lcsSimilarity(a.BlindSequence, b.BlindSequence)
+	if similarity >= minSimilarity {
+		return "Type-3", similarity
+	}
+
+	return "", 0.0
 }
 
 // sequenceEqual compares two token sequences for exact match
@@ -240,6 +248,45 @@ func sequenceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// lcsSimilarity computes LCS-based similarity ratio: 2*LCS(a,b)/(len(a)+len(b))
+// Returns a value in [0.0, 1.0] where 1.0 means identical sequences.
+// ponytail: O(N²) time/space per pair; fine at function-sized sequences.
+func lcsSimilarity(a, b []string) float64 {
+	assertf(len(a) > 0 || len(b) > 0, "lcsSimilarity called with two empty sequences")
+
+	if len(a) == 0 || len(b) == 0 {
+		return 0.0
+	}
+
+	// Compute LCS length using dynamic programming
+	m, n := len(a), len(b)
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if a[i-1] == b[j-1] {
+				dp[i][j] = dp[i-1][j-1] + 1
+			} else {
+				if dp[i-1][j] > dp[i][j-1] {
+					dp[i][j] = dp[i-1][j]
+				} else {
+					dp[i][j] = dp[i][j-1]
+				}
+			}
+		}
+	}
+
+	lcsLength := dp[m][n]
+	ratio := float64(2*lcsLength) / float64(m+n)
+
+	assertf(ratio >= 0.0 && ratio <= 1.0, "similarity ratio %f out of [0,1] range", ratio)
+
+	return ratio
 }
 
 // collectAndFilterFiles gathers .go files and filters out test files
@@ -285,8 +332,8 @@ func scanFilesForFunctions(files []string, minLines int, opts Options, report *R
 	return allFuncs
 }
 
-// reportDuplicates compares all function pairs and builds violation list
-func reportDuplicates(allFuncs []FuncInfo) []Violation {
+// reportDuplicates compares all function pairs and builds violation list with similarity threshold
+func reportDuplicates(allFuncs []FuncInfo, minSimilarity float64) []Violation {
 	var violations []Violation
 	seen := make(map[string]bool)
 	for i := 0; i < len(allFuncs); i++ {
@@ -297,7 +344,7 @@ func reportDuplicates(allFuncs []FuncInfo) []Violation {
 			// Assertion: never comparing a function against itself in unordered pairs
 			assertf(i != j, "comparing function against itself")
 
-			cloneType := classifyPair(a, b)
+			cloneType, similarity := classifyPair(a, b, minSimilarity)
 			if cloneType == "" {
 				continue
 			}
@@ -320,14 +367,15 @@ func reportDuplicates(allFuncs []FuncInfo) []Violation {
 			dupLines := funcLength(first.Func, first.Fset)
 
 			violation := Violation{
-				FileA:    first.File,
-				LineA:    first.Line,
-				FuncA:    first.Func.Name.Name,
-				FileB:    second.File,
-				LineB:    second.Line,
-				FuncB:    second.Func.Name.Name,
-				Type:     cloneType,
-				DupLines: dupLines,
+				FileA:      first.File,
+				LineA:      first.Line,
+				FuncA:      first.Func.Name.Name,
+				FileB:      second.File,
+				LineB:      second.Line,
+				FuncB:      second.Func.Name.Name,
+				Type:       cloneType,
+				DupLines:   dupLines,
+				Similarity: similarity,
 			}
 			violations = append(violations, violation)
 		}
@@ -335,8 +383,8 @@ func reportDuplicates(allFuncs []FuncInfo) []Violation {
 	return violations
 }
 
-// Check scans .go files (excluding _test.go) and reports function duplicates
-func Check(paths []string, minLines int, opts Options) (Report, error) {
+// CheckWithSimilarity scans .go files and reports function duplicates with LCS-based similarity threshold
+func CheckWithSimilarity(paths []string, minLines int, minSimilarity float64, opts Options) (Report, error) {
 	assertf(minLines > 0, "minLines must be positive, got %d", minLines)
 
 	nonTestFiles, report, err := collectAndFilterFiles(paths, opts)
@@ -345,7 +393,12 @@ func Check(paths []string, minLines int, opts Options) (Report, error) {
 	}
 
 	allFuncs := scanFilesForFunctions(nonTestFiles, minLines, opts, report)
-	report.Violations = reportDuplicates(allFuncs)
+	report.Violations = reportDuplicates(allFuncs, minSimilarity)
 
 	return *report, nil
+}
+
+// Check scans .go files (excluding _test.go) and reports function duplicates with default 0.70 similarity threshold
+func Check(paths []string, minLines int, opts Options) (Report, error) {
+	return CheckWithSimilarity(paths, minLines, 0.70, opts)
 }

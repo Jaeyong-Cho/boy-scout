@@ -111,6 +111,7 @@ func runGoFilelen(args []string, stdout, stderr io.Writer) int {
 func runGoDuplication(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("duplication", flag.ContinueOnError)
 	minLines := fs.Int("min-lines", 5, "minimum function length in lines to compare")
+	minSimilarity := fs.Float64("min-similarity", 0.70, "minimum LCS-based similarity ratio for Type-3 detection (0.0-1.0)")
 	format := fs.String("format", "text", "output format: text or json")
 	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
 	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
@@ -122,13 +123,19 @@ func runGoDuplication(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// Validate minSimilarity range
+	if *minSimilarity < 0.0 || *minSimilarity > 1.0 {
+		fmt.Fprintf(stderr, "error: --min-similarity must be in range [0.0, 1.0], got %v\n", *minSimilarity)
+		return 2
+	}
+
 	opts := duplication.Options{
 		ExcludeFiles: excludeFiles,
 		ExcludeFuncs: excludeFuncs,
 		Debug:        *debug,
 	}
 
-	report, err := duplication.Check(paths, *minLines, opts)
+	report, err := duplication.CheckWithSimilarity(paths, *minLines, *minSimilarity, opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2

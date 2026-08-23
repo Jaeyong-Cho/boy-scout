@@ -75,8 +75,13 @@ func renderFilelenJSON(report filelen.Report, stdout, stderr io.Writer) int {
 // each line prefixed with prefix (e.g. "[duplication] " when combined with other checks).
 func writeDuplicationLines(w io.Writer, prefix string, report duplication.Report) {
 	for _, v := range report.Violations {
-		fmt.Fprintf(w, "%s%s:%d: function %s is %s duplicate of %s:%d function %s (%d duplicated lines)\n",
-			prefix, v.FileA, v.LineA, v.FuncA, v.Type, v.FileB, v.LineB, v.FuncB, v.DupLines)
+		if v.Type == "Type-3" {
+			fmt.Fprintf(w, "%s%s:%d: function %s is %s duplicate of %s:%d function %s (%.1f%% similar, %d duplicated lines)\n",
+				prefix, v.FileA, v.LineA, v.FuncA, v.Type, v.FileB, v.LineB, v.FuncB, v.Similarity*100, v.DupLines)
+		} else {
+			fmt.Fprintf(w, "%s%s:%d: function %s is %s duplicate of %s:%d function %s (%d duplicated lines)\n",
+				prefix, v.FileA, v.LineA, v.FuncA, v.Type, v.FileB, v.LineB, v.FuncB, v.DupLines)
+		}
 	}
 	for _, f := range report.ExcludedFiles {
 		fmt.Fprintf(w, "%sexcluded file: %s\n", prefix, f)
