@@ -72,4 +72,20 @@ Each "Why/How" file explains the concept and fix strategy generically. Each lang
 
 ## Verification Loop
 
-After each edit — including writing a characterization test — re-run your project's test suite and boy-scout for your language(s) to verify the fix. If the fix succeeds (both commands green), move to the next violation. If a violation, including its characterization test if one was needed, fails to fix after 3 attempts total, mark it unresolved and continue with the rest. At the end, report the count of fixed vs. unresolved violations. If boy-scout finds zero violations, report clean and make no edits. Never commit changes with git.
+After each edit — including writing a characterization test — re-run your project's test suite and boy-scout for your language(s) to verify the fix. If the fix succeeds (both commands green), move to the next violation. If a violation, including its characterization test if one was needed, fails to fix after 3 attempts total, mark it unresolved and continue with the rest.
+
+## End of Run: Summary and Commit
+
+At the end of the run, report the count of fixed vs. unresolved violations:
+- If boy-scout finds zero violations, report clean and make no edits.
+- If violations were fixed, show a summary: how many fixed, how many unresolved, how many skipped by the 5-per-run cap.
+
+**Commit your changes:** Ask the user to confirm they want to commit the fixes:
+
+```
+You fixed N violations (M unresolved, K skipped by cap).
+Ready to commit these changes? (yes/no)
+```
+
+- If **yes:** Run `git commit -m "Fix boy-scout violations (fixed: N, unresolved: M)"` to commit with a standard message.
+- If **no:** Stop here. The changes remain in your working directory for manual review or further edits before you commit manually.
