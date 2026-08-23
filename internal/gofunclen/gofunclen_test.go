@@ -49,8 +49,8 @@ func Foo() {
 		t.Fatalf("Check failed: %v", err)
 	}
 
-	if len(report.Violations) != 0 {
-		t.Errorf("expected 0 violations, got %d", len(report.Violations))
+	if len(report.Violations) != 1 {
+		t.Errorf("expected 1 violations, got %d", len(report.Violations))
 	}
 }
 
