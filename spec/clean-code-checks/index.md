@@ -17,3 +17,4 @@ The first check implemented is func-length-limit, which flags functions exceedin
 - [crap-default-threshold-fix](./crap-default-threshold-fix.md)
 - [exclude-files-and-functions](./exclude-files-and-functions.md)
 - [selective-checker-ignore](./selective-checker-ignore.md)
+- [duplication-detector](./duplication-detector.md)

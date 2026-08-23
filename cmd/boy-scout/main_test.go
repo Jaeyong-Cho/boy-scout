@@ -1572,3 +1572,125 @@ func TestWriteTsFunclenLines_CharacterizationTest(t *testing.T) {
 		t.Errorf("expected excluded line format not found, got: %q", output)
 	}
 }
+
+// TestRun_DuplicationReportsRenamedFunctionAsType2Clone tests the duplication checker CLI
+func TestRun_DuplicationReportsRenamedFunctionAsType2Clone(t *testing.T) {
+	tmpDir := t.TempDir()
+	initModule(t, tmpDir)
+
+	// Create tax.go with CalculateTax function
+	writeGoFile(t, tmpDir, "tax.go", `package billing
+
+func CalculateTax(amount float64) float64 {
+	rate := 0.08
+	total := amount * rate
+	if total < 0 {
+		total = 0
+	}
+	return total
+}
+`)
+
+	// Create fee.go with CalculateFee function (same structure, renamed identifiers)
+	writeGoFile(t, tmpDir, "fee.go", `package billing
+
+func CalculateFee(price float64) float64 {
+	pct := 0.08
+	result := price * pct
+	if result < 0 {
+		result = 0
+	}
+	return result
+}
+`)
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"go", "duplication", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report Type-2 duplicate
+	if !strings.Contains(output, "Type-2") {
+		t.Errorf("expected output to contain 'Type-2', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	// Should mention both files and functions
+	if !strings.Contains(output, "fee.go") || !strings.Contains(output, "tax.go") {
+		t.Errorf("expected output to mention both files, got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if !strings.Contains(output, "CalculateFee") || !strings.Contains(output, "CalculateTax") {
+		t.Errorf("expected output to mention both functions, got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	// Exit code should be 1 (violation found)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+// TestRun_DuplicationJSONFormatOutputsValidSchema tests JSON output format
+func TestRun_DuplicationJSONFormatOutputsValidSchema(t *testing.T) {
+	tmpDir := t.TempDir()
+	initModule(t, tmpDir)
+
+	// Create two identical functions
+	writeGoFile(t, tmpDir, "a.go", `package test
+
+func Duplicate() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	writeGoFile(t, tmpDir, "b.go", `package test
+
+func Duplicate2() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"go", "duplication", "--format=json", tmpDir}, &stdout, &stderr)
+
+	// Parse JSON
+	type duplicationReportJSON struct {
+		Violations []struct {
+			FileA    string `json:"fileA"`
+			LineA    int    `json:"lineA"`
+			FuncA    string `json:"funcA"`
+			FileB    string `json:"fileB"`
+			LineB    int    `json:"lineB"`
+			FuncB    string `json:"funcB"`
+			Type     string `json:"type"`
+			DupLines int    `json:"dupLines"`
+		} `json:"violations"`
+	}
+
+	var report duplicationReportJSON
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	// Should have exactly one violation
+	if len(report.Violations) != 1 {
+		t.Errorf("expected 1 violation, got %d", len(report.Violations))
+	}
+
+	v := report.Violations[0]
+	if v.Type != "Type-1" {
+		t.Errorf("expected Type-1, got %s", v.Type)
+	}
+
+	// Exit code should be 1
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+

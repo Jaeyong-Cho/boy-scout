@@ -85,6 +85,7 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 		"gofunclen":    runGoFunclen,
 		"filelen":      runGoFilelen,
 		"crap":         runGoCrap,
+		"duplication":  runGoDuplication,
 		"instability":  runGoInstability,
 		"abstractness": runGoAbstractness,
 		"all":          runGoAll,
