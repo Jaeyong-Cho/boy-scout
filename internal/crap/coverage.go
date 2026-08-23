@@ -171,7 +171,7 @@ func testTarget(path string) (target string, ok bool) {
 // If go test compiles but fails assertions, it still returns the profile
 // (partial coverage is used).
 func runGoTest(dir string, paths []string) (profilePath string, cleanup func(), err error) {
-	tmpFile, err := os.CreateTemp("", "gardener-crap-*.out")
+	tmpFile, err := os.CreateTemp("", "boy-scout-crap-*.out")
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create temp file: %w", err)
 	}

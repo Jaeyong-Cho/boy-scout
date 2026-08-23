@@ -1,4 +1,4 @@
-module gardener-go
+module boy-scout
 
 go 1.24
 

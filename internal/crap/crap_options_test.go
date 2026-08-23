@@ -105,7 +105,7 @@ func TestCheck_ExcludeFuncByCommentDirective(t *testing.T) {
 
 	writeFile(t, "main.go", `package main
 
-// gardener:ignore
+// boy-scout:ignore
 func ComplexFunc() {
 	if true { if true { if true { if true { if true { } } } } }
 }
@@ -136,7 +136,7 @@ func TestCheck_ExcludeFuncByCommentDirective_NamesThisChecker(t *testing.T) {
 
 	writeFile(t, "main.go", `package main
 
-// gardener:ignore:crap
+// boy-scout:ignore:crap
 func ComplexFunc() {
 	if true { if true { if true { if true { if true { } } } } }
 }
@@ -167,7 +167,7 @@ func TestCheck_ExcludeFuncByCommentDirective_NamesOtherCheckerOnly(t *testing.T)
 
 	writeFile(t, "main.go", `package main
 
-// gardener:ignore:funclen
+// boy-scout:ignore:funclen
 func ComplexFunc() {
 	if true { if true { if true { if true { if true { } } } } }
 }

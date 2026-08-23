@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	"gardener-go/internal/cppfunclen"
-	"gardener-go/internal/crap"
-	"gardener-go/internal/filelen"
-	"gardener-go/internal/gofunclen"
+	"boy-scout/internal/cppfunclen"
+	"boy-scout/internal/crap"
+	"boy-scout/internal/filelen"
+	"boy-scout/internal/gofunclen"
 )
 
 func runGoFunclen(args []string, stdout, stderr io.Writer) int {

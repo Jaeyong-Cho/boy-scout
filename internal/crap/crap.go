@@ -6,8 +6,8 @@ import (
 	"go/token"
 	"math"
 
-	"gardener-go/internal/funcignore"
-	"gardener-go/internal/srcfiles"
+	"boy-scout/internal/funcignore"
+	"boy-scout/internal/srcfiles"
 )
 
 // defaultExcludeFiles are excluded from CRAP scoring even when the caller

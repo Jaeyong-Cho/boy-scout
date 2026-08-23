@@ -14,7 +14,7 @@ func assertf(cond bool, format string, args ...any) {
 }
 
 // Reason checks whether a function should be excluded for the given checker,
-// based on name-pattern flags or a `// gardener:ignore[:checker[,checker...]]`
+// based on name-pattern flags or a `// boy-scout:ignore[:checker[,checker...]]`
 // doc-comment directive. Returns (excluded, reason) where reason is one of:
 // "flag", "comment", or "" (not excluded). checker is the calling checker's
 // own CLI subcommand name (e.g. "funclen", "crap").
@@ -47,14 +47,14 @@ func hasIgnoreComment(fn *ast.FuncDecl, checker string) bool {
 }
 
 // commentIgnores reports whether a single doc-comment line is a
-// `// gardener:ignore` or `// gardener:ignore:checker[,checker...]` directive
+// `// boy-scout:ignore` or `// boy-scout:ignore:checker[,checker...]` directive
 // applying to checker.
 func commentIgnores(commentText, checker string) bool {
 	text := strings.TrimSpace(strings.TrimPrefix(commentText, "//"))
-	if text == "gardener:ignore" {
+	if text == "boy-scout:ignore" {
 		return true
 	}
-	rest, ok := strings.CutPrefix(text, "gardener:ignore:")
+	rest, ok := strings.CutPrefix(text, "boy-scout:ignore:")
 	if !ok {
 		return false
 	}

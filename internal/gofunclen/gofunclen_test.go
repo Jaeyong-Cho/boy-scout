@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gardener-go/internal/gofunclen"
+	"boy-scout/internal/gofunclen"
 )
 
 // writeFile writes content to path, failing the test on error.

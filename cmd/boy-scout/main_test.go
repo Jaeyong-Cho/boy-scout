@@ -293,8 +293,8 @@ func TestRun_NoSubcommandPrintsUsage(t *testing.T) {
 	exitCode := run([]string{}, &stdoutBuf, &stderrBuf)
 
 	stderr := stderrBuf.String()
-	if !strings.Contains(stderr, "gardener <lang> <command>") || !strings.Contains(stderr, "languages: go") || !strings.Contains(stderr, "gardener setup") {
-		t.Errorf("expected usage message with 'gardener <lang> <command>', 'languages: go' and 'gardener setup', got:\n%s", stderr)
+	if !strings.Contains(stderr, "boy-scout <lang> <command>") || !strings.Contains(stderr, "languages: go") || !strings.Contains(stderr, "boy-scout setup") {
+		t.Errorf("expected usage message with 'boy-scout <lang> <command>', 'languages: go' and 'boy-scout setup', got:\n%s", stderr)
 	}
 
 	if exitCode != 2 {

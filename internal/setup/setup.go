@@ -17,8 +17,8 @@ func assertf(cond bool, format string, args ...any) {
 	}
 }
 
-// Run creates a skill file at baseDir/{prefix}/skills/gardener/SKILL.md and copies
-// the gardener binary to baseDir/{prefix}/bin/gardener. It overwrites if they already exist.
+// Run creates a skill file at baseDir/{prefix}/skills/boy-scout/SKILL.md and copies
+// the boy-scout binary to baseDir/{prefix}/bin/boy-scout. It overwrites if they already exist.
 // It returns the path to the written skill file.
 func Run(baseDir string, binaryPath string, prefix string) (string, error) {
 	// Read the embedded skill.md template
@@ -30,11 +30,12 @@ func Run(baseDir string, binaryPath string, prefix string) (string, error) {
 	assertf(len(content) > 0, "embedded skill.md is empty")
 	assertf(!strings.Contains(string(content), "/Users/"), "embedded skill.md references a machine-local path; violation explanations must be self-contained")
 	assertf(!strings.Contains(string(content), "~/workspace"), "embedded skill.md references a machine-local path; violation explanations must be self-contained")
+	assertf(!strings.Contains(string(content), "gardener"), "embedded skill.md still references old tool name 'gardener'")
 	assertf(prefix != "", "prefix must not be empty")
 
 	// Build the target paths
-	skillPath := filepath.Join(baseDir, prefix, "skills", "gardener", "SKILL.md")
-	binPath := filepath.Join(baseDir, prefix, "bin", "gardener")
+	skillPath := filepath.Join(baseDir, prefix, "skills", "boy-scout", "SKILL.md")
+	binPath := filepath.Join(baseDir, prefix, "bin", "boy-scout")
 
 	if err := ensureDirs(filepath.Dir(skillPath), filepath.Dir(binPath)); err != nil {
 		return "", err
@@ -49,7 +50,7 @@ func Run(baseDir string, binaryPath string, prefix string) (string, error) {
 		return "", err
 	}
 
-	assertf(strings.HasSuffix(skillPath, filepath.Join(prefix, "skills", "gardener", "SKILL.md")), "unexpected skill path: %s", skillPath)
+	assertf(strings.HasSuffix(skillPath, filepath.Join(prefix, "skills", "boy-scout", "SKILL.md")), "unexpected skill path: %s", skillPath)
 
 	return skillPath, nil
 }

@@ -3,7 +3,7 @@
 type: Source Code
 title: filelen
 description: Language-agnostic file line-count checker, dispatched per language (go/cpp) like funclen, reusing the existing srcfiles walker.
-tags: [gardener, clean-code-checks]
+tags: [boy-scout, clean-code-checks]
 timestamp: 2026-08-22T00:00:00+09:00
 ---
 */
@@ -14,7 +14,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"gardener-go/internal/srcfiles"
+	"boy-scout/internal/srcfiles"
 )
 
 type Violation struct {

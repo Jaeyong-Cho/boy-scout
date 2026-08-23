@@ -28,7 +28,7 @@ func TestReason_CommentDirectiveNamesOnlyThisChecker(t *testing.T) {
 	src := `
 package test
 
-// gardener:ignore:funclen
+// boy-scout:ignore:funclen
 func LongFunc() {
 	return
 }
@@ -52,7 +52,7 @@ func TestReason_CommaListMatchesEitherChecker(t *testing.T) {
 	src := `
 package test
 
-// gardener:ignore:funclen,crap
+// boy-scout:ignore:funclen,crap
 func ComplexFunc() {
 	return
 }
@@ -74,7 +74,7 @@ func TestReason_WhitespaceAroundNamesIsTrimmed(t *testing.T) {
 	src := `
 package test
 
-// gardener:ignore: funclen , crap
+// boy-scout:ignore: funclen , crap
 func Func() {
 	return
 }
@@ -96,7 +96,7 @@ func TestReason_DuplicateCheckerNameInListIsNoOp(t *testing.T) {
 	src := `
 package test
 
-// gardener:ignore:funclen,funclen
+// boy-scout:ignore:funclen,funclen
 func Func() {
 	return
 }
@@ -113,7 +113,7 @@ func TestReason_EmptyListAfterColonExcludesNothing(t *testing.T) {
 	src := `
 package test
 
-// gardener:ignore:
+// boy-scout:ignore:
 func Func() {
 	return
 }
@@ -135,7 +135,7 @@ func TestReason_UnknownCheckerNameExcludesNothing(t *testing.T) {
 	src := `
 package test
 
-// gardener:ignore:fooey
+// boy-scout:ignore:fooey
 func Func() {
 	return
 }
@@ -173,7 +173,7 @@ func TestReason_BareDirectiveExcludesRegardlessOfChecker(t *testing.T) {
 	src := `
 package test
 
-// gardener:ignore
+// boy-scout:ignore
 func Func() {
 	return
 }
@@ -188,5 +188,27 @@ func Func() {
 	excluded, reason = Reason(fn, nil, "crap")
 	if !excluded || reason != "comment" {
 		t.Errorf("crap: got excluded=%v reason=%q, want excluded=true reason=comment", excluded, reason)
+	}
+}
+
+func TestReason_OldGardenerMarkerNoLongerWorks(t *testing.T) {
+	src := `
+package test
+
+// gardener:ignore
+func OldMarkerFunc() {
+	return
+}
+`
+	fn := parseFuncWithDoc(t, src)
+
+	excluded, _ := Reason(fn, nil, "funclen")
+	if excluded {
+		t.Errorf("funclen: got excluded=%v, want excluded=false (old marker should not work)", excluded)
+	}
+
+	excluded, _ = Reason(fn, nil, "crap")
+	if excluded {
+		t.Errorf("crap: got excluded=%v, want excluded=false (old marker should not work)", excluded)
 	}
 }

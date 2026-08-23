@@ -6,8 +6,8 @@ import (
 	"go/parser"
 	"go/token"
 
-	"gardener-go/internal/funcignore"
-	"gardener-go/internal/srcfiles"
+	"boy-scout/internal/funcignore"
+	"boy-scout/internal/srcfiles"
 )
 
 type Violation struct {

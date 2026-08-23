@@ -3,7 +3,7 @@
 type: Source Code
 title: filelen tests
 description: Unit tests for the file line-count checker, verifying correct line counting, exclusion handling, and skip behavior.
-tags: [gardener, clean-code-checks, test]
+tags: [boy-scout, clean-code-checks, test]
 timestamp: 2026-08-22T00:00:00+09:00
 ---
 */
@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"gardener-go/internal/filelen"
+	"boy-scout/internal/filelen"
 )
 
 // writeFile writes content to path, creating parent directories as needed.

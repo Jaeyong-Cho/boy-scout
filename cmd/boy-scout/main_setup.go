@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gardener-go/internal/setup"
+	"boy-scout/internal/setup"
 )
 
 // setupTarget maps a target name (claude, copilot, pi, agents) to its directory prefix.
@@ -163,7 +163,7 @@ func parseSetupArgs(args []string, stderr io.Writer) (global bool, positional []
 			global = true
 		} else if strings.HasPrefix(arg, "-") {
 			fmt.Fprintf(stderr, "unknown flag: %s\n", arg)
-			fmt.Fprintln(stderr, "usage: gardener setup [claude|copilot|pi|agents] [--global]")
+			fmt.Fprintln(stderr, "usage: boy-scout setup [claude|copilot|pi|agents] [--global]")
 			return false, nil, fmt.Errorf("unknown flag: %s", arg)
 		} else {
 			positional = append(positional, arg)
@@ -171,7 +171,7 @@ func parseSetupArgs(args []string, stderr io.Writer) (global bool, positional []
 	}
 
 	if len(positional) > 1 {
-		fmt.Fprintln(stderr, "usage: gardener setup [claude|copilot|pi|agents] [--global]")
+		fmt.Fprintln(stderr, "usage: boy-scout setup [claude|copilot|pi|agents] [--global]")
 		return false, nil, fmt.Errorf("too many positional arguments")
 	}
 
@@ -204,6 +204,6 @@ func runSetup(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	fmt.Fprintf(stdout, "gardener skill installed: %s\n", path)
+	fmt.Fprintf(stdout, "boy-scout skill installed: %s\n", path)
 	return 0
 }

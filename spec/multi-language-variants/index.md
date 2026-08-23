@@ -14,3 +14,4 @@ This EPIC establishes a multi-language dispatch architecture: one `gardener` bin
 - [unify-cli-dispatch](./unify-cli-dispatch.md)
 - [cpp-funclen-support](./cpp-funclen-support.md)
 - [rename-funclen-gofunclen](./rename-funclen-gofunclen.md)
+- [rename-gardener-boy-scout](./rename-gardener-boy-scout.md)

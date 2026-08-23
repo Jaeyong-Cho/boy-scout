@@ -92,9 +92,9 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: gardener <lang> <command> [options] [paths...]")
+		fmt.Fprintln(stderr, "usage: boy-scout <lang> <command> [options] [paths...]")
 		fmt.Fprintln(stderr, "languages: go")
-		fmt.Fprintln(stderr, "gardener setup [claude|copilot|pi|agents] [--global]")
+		fmt.Fprintln(stderr, "boy-scout setup [claude|copilot|pi|agents] [--global]")
 		return 2
 	}
 
@@ -116,7 +116,7 @@ func dispatchLang(lang string, args []string, stdout, stderr io.Writer) int {
 	}
 
 	if len(args) < 1 {
-		fmt.Fprintf(stderr, "usage: gardener %s <command> [options] [paths...]\n", lang)
+		fmt.Fprintf(stderr, "usage: boy-scout %s <command> [options] [paths...]\n", lang)
 		return 2
 	}
 

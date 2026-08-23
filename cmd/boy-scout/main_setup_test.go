@@ -35,18 +35,18 @@ func TestRun_SetupLocalWritesRelativeSkillFile(t *testing.T) {
 	}
 
 	stdout := stdoutBuf.String()
-	if !strings.Contains(stdout, "gardener skill installed:") {
-		t.Errorf("expected 'gardener skill installed:' in stdout, got: %s", stdout)
+	if !strings.Contains(stdout, "boy-scout skill installed:") {
+		t.Errorf("expected 'boy-scout skill installed:' in stdout, got: %s", stdout)
 	}
 
 	// Verify the skill file exists
-	skillPath := filepath.Join(tmpDir, ".agents", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("skill file not found at %q: %v", skillPath, err)
 	}
 
 	// Verify the binary was copied
-	binPath := filepath.Join(tmpDir, ".agents", "bin", "gardener")
+	binPath := filepath.Join(tmpDir, ".agents", "bin", "boy-scout")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Fatalf("binary not found at %q: %v", binPath, err)
 	}
@@ -65,13 +65,13 @@ func TestRun_SetupGlobalWritesToHomeDir(t *testing.T) {
 	}
 
 	// Verify the skill file exists in the home directory
-	skillPath := filepath.Join(homeDir, ".agents", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(homeDir, ".agents", "skills", "boy-scout", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("skill file not found at %q: %v", skillPath, err)
 	}
 
 	// Verify the binary was copied
-	binPath := filepath.Join(homeDir, ".agents", "bin", "gardener")
+	binPath := filepath.Join(homeDir, ".agents", "bin", "boy-scout")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Fatalf("binary not found at %q: %v", binPath, err)
 	}
@@ -155,7 +155,7 @@ func TestRun_SetupWriteFailureExitsTwo(t *testing.T) {
 func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
 	// Create a fixture with a function long enough for gofunclen (105 lines)
 	// and complex enough for crap (5 nested ifs = complexity 5, with no coverage = score = 5^2*(1-0)^3 + 5 = 30, way above 6.0 threshold)
-	src := "package main\n\n// gardener:ignore:crap\nfunc ViolatingFunc() {\n"
+	src := "package main\n\n// boy-scout:ignore:crap\nfunc ViolatingFunc() {\n"
 	for i := 0; i < 100; i++ {
 		src += fmt.Sprintf("\t_ = %d\n", i)
 	}
@@ -452,12 +452,12 @@ func TestRun_SetupClaudeWritesClaudeSkillPath(t *testing.T) {
 		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
 	}
 
-	skillPath := filepath.Join(tmpDir, ".claude", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(tmpDir, ".claude", "skills", "boy-scout", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("skill file not found at %q: %v", skillPath, err)
 	}
 
-	binPath := filepath.Join(tmpDir, ".claude", "bin", "gardener")
+	binPath := filepath.Join(tmpDir, ".claude", "bin", "boy-scout")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Fatalf("binary not found at %q: %v", binPath, err)
 	}
@@ -486,12 +486,12 @@ func TestRun_SetupCopilotWritesCopilotSkillPath(t *testing.T) {
 		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
 	}
 
-	skillPath := filepath.Join(tmpDir, ".copilot", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(tmpDir, ".copilot", "skills", "boy-scout", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("skill file not found at %q: %v", skillPath, err)
 	}
 
-	binPath := filepath.Join(tmpDir, ".copilot", "bin", "gardener")
+	binPath := filepath.Join(tmpDir, ".copilot", "bin", "boy-scout")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Fatalf("binary not found at %q: %v", binPath, err)
 	}
@@ -520,12 +520,12 @@ func TestRun_SetupPiWritesPiAgentSkillPath(t *testing.T) {
 		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
 	}
 
-	skillPath := filepath.Join(tmpDir, ".pi", "agent", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(tmpDir, ".pi", "agent", "skills", "boy-scout", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("skill file not found at %q: %v", skillPath, err)
 	}
 
-	binPath := filepath.Join(tmpDir, ".pi", "agent", "bin", "gardener")
+	binPath := filepath.Join(tmpDir, ".pi", "agent", "bin", "boy-scout")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Fatalf("binary not found at %q: %v", binPath, err)
 	}
@@ -669,7 +669,7 @@ func TestRun_SetupGlobalFlagComposesInEitherOrder(t *testing.T) {
 				t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
 			}
 
-			skillPath := filepath.Join(homeDir, ".claude", "skills", "gardener", "SKILL.md")
+			skillPath := filepath.Join(homeDir, ".claude", "skills", "boy-scout", "SKILL.md")
 			if _, err := os.Stat(skillPath); err != nil {
 				t.Fatalf("skill file not found at %q: %v", skillPath, err)
 			}

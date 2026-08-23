@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"gardener-go/internal/gofunclen"
+	"boy-scout/internal/gofunclen"
 )
 
 func TestCheck_ExcludeFileSkipsFileAndReportsWhenDebug(t *testing.T) {
@@ -111,7 +111,7 @@ func TestRealFunc() {
 func TestCheck_ExcludeFuncByCommentDirective(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore"))
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// boy-scout:ignore"))
 
 	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,
@@ -140,7 +140,7 @@ func TestCheck_CommentDirectiveTypoIsNotExcluded(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Typo: missing colon
-	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardenerignore"))
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// boy-scoutignore"))
 
 	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,
@@ -162,7 +162,7 @@ func TestCheck_CommentDirectiveTypoIsNotExcluded(t *testing.T) {
 func TestCheck_ExcludeFuncByCommentDirective_NamesThisChecker(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore:gofunclen"))
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// boy-scout:ignore:gofunclen"))
 
 	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,
@@ -191,7 +191,7 @@ func TestCheck_ExcludeFuncByCommentDirective_NamesOtherCheckerOnly(t *testing.T)
 	tmpDir := t.TempDir()
 
 	// Comment directive names only "crap", not "gofunclen"
-	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// gardener:ignore:crap"))
+	writeFile(t, tmpDir+"/test.go", funcSrc("Foo", 103, "// boy-scout:ignore:crap"))
 
 	report, err := gofunclen.Check([]string{tmpDir}, 100, gofunclen.Options{
 		Debug: true,

@@ -7,7 +7,7 @@ import (
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/cpp"
-	"gardener-go/internal/srcfiles"
+	"boy-scout/internal/srcfiles"
 )
 
 type Violation struct {
@@ -226,7 +226,7 @@ func scanFileForCppLength(filePath string, source []byte, maxLines int, opts Opt
 
 // Check walks the provided paths and returns a report of all C++ functions exceeding maxLines.
 //
-// NOTE: Comment-based gardener:ignore support is not implemented for C++ — this was
+// NOTE: Comment-based boy-scout:ignore support is not implemented for C++ — this was
 // deferred to a future plan. Tree-sitter's C++ grammar comment-handling was never
 // verified, so we don't build on it here.
 func Check(paths []string, maxLines int, opts Options) (Report, error) {

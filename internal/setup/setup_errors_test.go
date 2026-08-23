@@ -49,7 +49,7 @@ func TestRun_ReturnsErrorWhenBinaryUnreadable(t *testing.T) {
 
 func TestRun_ReturnsErrorWhenSkillFileIsDirectory(t *testing.T) {
 	baseDir := t.TempDir()
-	skillPath := filepath.Join(baseDir, ".agents", "skills", "gardener", "SKILL.md")
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "SKILL.md")
 	if err := os.MkdirAll(skillPath, 0755); err != nil {
 		t.Fatalf("failed to pre-create skill path as directory: %v", err)
 	}
