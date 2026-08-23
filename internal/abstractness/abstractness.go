@@ -146,22 +146,36 @@ func countTypesInFile(filePath string) (int, int, []SkippedFile, error) {
 		return 0, 0, nil, err
 	}
 
+	interfaces, structs := countTypesInDecls(file.Decls)
+	return interfaces, structs, nil, nil
+}
+
+// countTypesInDecls counts exported interface and struct types in a list of declarations.
+func countTypesInDecls(decls []ast.Decl) (int, int) {
 	var interfaces, structs int
-	for _, decl := range file.Decls {
+	for _, decl := range decls {
 		// Only process type declarations
 		if g, ok := decl.(*ast.GenDecl); ok && g.Tok == token.TYPE {
-			for _, spec := range g.Specs {
-				// Only process type specs (not import specs)
-				if ts, ok := spec.(*ast.TypeSpec); ok {
-					iCnt, sCnt := countTypeKinds(ts)
-					interfaces += iCnt
-					structs += sCnt
-				}
-			}
+			iCnt, sCnt := countTypesInGenDecl(g)
+			interfaces += iCnt
+			structs += sCnt
 		}
 	}
+	return interfaces, structs
+}
 
-	return interfaces, structs, nil, nil
+// countTypesInGenDecl counts exported interface and struct types in a generic declaration.
+func countTypesInGenDecl(g *ast.GenDecl) (int, int) {
+	var interfaces, structs int
+	for _, spec := range g.Specs {
+		// Only process type specs (not import specs)
+		if ts, ok := spec.(*ast.TypeSpec); ok {
+			iCnt, sCnt := countTypeKinds(ts)
+			interfaces += iCnt
+			structs += sCnt
+		}
+	}
+	return interfaces, structs
 }
 
 // countTypeKinds counts interface and struct types in a TypeSpec if exported.

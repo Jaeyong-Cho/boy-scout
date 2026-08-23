@@ -113,27 +113,36 @@ func writeReferenceFilesRecursive(srcDir, dstDir string) error {
 		dstPath := filepath.Join(dstDir, entry.Name())
 
 		if entry.IsDir() {
-			// Create subdirectory and recurse
-			if err := os.MkdirAll(dstPath, 0755); err != nil {
-				return fmt.Errorf("failed to create directory %s: %w", dstPath, err)
-			}
-			if err := writeReferenceFilesRecursive(srcPath, dstPath); err != nil {
+			if err := processReferenceDir(srcPath, dstPath); err != nil {
 				return err
 			}
 		} else {
-			// Write file
-			content, err := skillContent.ReadFile(srcPath)
-			if err != nil {
-				return fmt.Errorf("failed to read file %s: %w", srcPath, err)
-			}
-
-			assertNoMachineLocalPath(entry.Name(), content)
-
-			if err := os.WriteFile(dstPath, content, 0644); err != nil {
-				return fmt.Errorf("failed to write file %s: %w", dstPath, err)
+			if err := writeReferenceFile(srcPath, dstPath, entry.Name()); err != nil {
+				return err
 			}
 		}
 	}
 
+	return nil
+}
+
+func processReferenceDir(srcPath, dstPath string) error {
+	if err := os.MkdirAll(dstPath, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dstPath, err)
+	}
+	return writeReferenceFilesRecursive(srcPath, dstPath)
+}
+
+func writeReferenceFile(srcPath, dstPath, name string) error {
+	content, err := skillContent.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", srcPath, err)
+	}
+
+	assertNoMachineLocalPath(name, content)
+
+	if err := os.WriteFile(dstPath, content, 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", dstPath, err)
+	}
 	return nil
 }
