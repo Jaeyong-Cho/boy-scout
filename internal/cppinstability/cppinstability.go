@@ -97,6 +97,37 @@ func Check(paths []string, minGap float64, opts Options) (instability.Report, er
 	}, nil
 }
 
+// processFileForIncludes parses a single file and extracts its #include dependencies
+func processFileForIncludes(filePath, root string, parser *sitter.Parser, packageImports map[string]map[string]bool, packageFiles map[string][]string) {
+	// Normalize to absolute then relative path (per plan spec)
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return
+	}
+	relPath, err := filepath.Rel(root, absPath)
+	if err != nil {
+		return
+	}
+
+	// Read and parse file
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return
+	}
+
+	tree := parser.Parse(nil, content)
+	treeRoot := tree.RootNode()
+
+	// Initialize the package's import set
+	if packageImports[relPath] == nil {
+		packageImports[relPath] = make(map[string]bool)
+	}
+	packageFiles[relPath] = []string{absPath}
+
+	// Extract #include directives
+	extractIncludes(treeRoot, content, relPath, absPath, packageImports, root)
+}
+
 // collectCppIncludes parses C++ files and collects #include dependencies.
 // Returns packageImports (file -> set of files it includes) and packageFiles (file -> [file]).
 func collectCppIncludes(filesToCheck []string, root string) (map[string]map[string]bool, map[string][]string) {
@@ -107,33 +138,7 @@ func collectCppIncludes(filesToCheck []string, root string) (map[string]map[stri
 	parser.SetLanguage(cpp.GetLanguage())
 
 	for _, filePath := range filesToCheck {
-		// Normalize to absolute then relative path (per plan spec)
-		absPath, err := filepath.Abs(filePath)
-		if err != nil {
-			continue
-		}
-		relPath, err := filepath.Rel(root, absPath)
-		if err != nil {
-			continue
-		}
-
-		// Read and parse file
-		content, err := os.ReadFile(absPath)
-		if err != nil {
-			continue
-		}
-
-		tree := parser.Parse(nil, content)
-		treeRoot := tree.RootNode()
-
-		// Initialize the package's import set
-		if packageImports[relPath] == nil {
-			packageImports[relPath] = make(map[string]bool)
-		}
-		packageFiles[relPath] = []string{absPath}
-
-		// Extract #include directives
-		extractIncludes(treeRoot, content, relPath, absPath, packageImports, root)
+		processFileForIncludes(filePath, root, parser, packageImports, packageFiles)
 	}
 
 	return packageImports, packageFiles

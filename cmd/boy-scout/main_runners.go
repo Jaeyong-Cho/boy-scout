@@ -240,6 +240,49 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	return renderAllText(combined, stdout, stderr)
 }
 
+// buildCheckClosures constructs check functions that populate the reports
+func buildCheckClosures(paths []string, excludeFiles, excludeFuncs []string, debug bool, reports *struct {
+	gofunclen   *gofunclen.Report
+	crap        *crap.Report
+	filelen     *filelen.Report
+	duplication *duplication.Report
+	instability *instability.Report
+	abstractness *abstractness.Report
+}) []func() error {
+	return []func() error{
+		func() error {
+			var err error
+			*reports.gofunclen, err = checkAllGofunclen(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			*reports.crap, err = checkAllCrap(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			*reports.filelen, err = checkAllFilelen(paths, excludeFiles, debug)
+			return err
+		},
+		func() error {
+			var err error
+			*reports.duplication, err = checkAllDuplication(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			*reports.instability, err = checkAllInstability(paths, excludeFiles, debug)
+			return err
+		},
+		func() error {
+			var err error
+			*reports.abstractness, err = checkAllAbstractness(paths, excludeFiles, debug)
+			return err
+		},
+	}
+}
+
 // checkAll runs all checks with shared options.
 func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, duplication.Report, instability.Report, abstractness.Report, error) {
 	var (
@@ -251,40 +294,23 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 		abstractnessReport abstractness.Report
 	)
 
-	// Collect checks as closures to reduce branching complexity
-	checks := []func() error{
-		func() error {
-			var err error
-			gofunclenReport, err = checkAllGofunclen(paths, excludeFiles, excludeFuncs, debug)
-			return err
-		},
-		func() error {
-			var err error
-			crapReport, err = checkAllCrap(paths, excludeFiles, excludeFuncs, debug)
-			return err
-		},
-		func() error {
-			var err error
-			filelenReport, err = checkAllFilelen(paths, excludeFiles, debug)
-			return err
-		},
-		func() error {
-			var err error
-			duplicationReport, err = checkAllDuplication(paths, excludeFiles, excludeFuncs, debug)
-			return err
-		},
-		func() error {
-			var err error
-			instabilityReport, err = checkAllInstability(paths, excludeFiles, debug)
-			return err
-		},
-		func() error {
-			var err error
-			abstractnessReport, err = checkAllAbstractness(paths, excludeFiles, debug)
-			return err
-		},
+	reports := &struct {
+		gofunclen   *gofunclen.Report
+		crap        *crap.Report
+		filelen     *filelen.Report
+		duplication *duplication.Report
+		instability *instability.Report
+		abstractness *abstractness.Report
+	}{
+		gofunclen:    &gofunclenReport,
+		crap:         &crapReport,
+		filelen:      &filelenReport,
+		duplication:  &duplicationReport,
+		instability:  &instabilityReport,
+		abstractness: &abstractnessReport,
 	}
 
+	checks := buildCheckClosures(paths, excludeFiles, excludeFuncs, debug, reports)
 	for _, check := range checks {
 		if err := check(); err != nil {
 			return gofunclenReport, crapReport, filelenReport, duplicationReport, instabilityReport, abstractnessReport, err

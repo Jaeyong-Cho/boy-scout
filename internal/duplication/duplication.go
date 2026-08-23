@@ -72,6 +72,24 @@ type FuncInfo struct {
 	BlindSequence []string
 }
 
+// tokenToBlind maps a token to its blind representation (identifier→ID, literal→LIT_type)
+func tokenToBlind(tok token.Token, lit string, rawStr string, identMap map[string]string, nextID *int) string {
+	switch tok {
+	case token.IDENT:
+		if alias, exists := identMap[lit]; exists {
+			return alias
+		}
+		alias := fmt.Sprintf("ID%d", *nextID)
+		identMap[lit] = alias
+		*nextID++
+		return alias
+	case token.INT, token.FLOAT, token.STRING, token.CHAR, token.IMAG:
+		return fmt.Sprintf("LIT_%s", tok.String())
+	default:
+		return rawStr
+	}
+}
+
 // tokenSequence extracts tokens from a function's source, returning two sequences:
 // raw (unchanged) and blind (identifiers → aliases, literals → placeholders)
 func tokenSequence(fn *ast.FuncDecl, fset *token.FileSet, src []byte) (raw, blind []string, err error) {
@@ -115,25 +133,7 @@ func tokenSequence(fn *ast.FuncDecl, fset *token.FileSet, src []byte) (raw, blin
 			rawStr = tok.String()
 		}
 		raw = append(raw, rawStr)
-
-		// Compute blind version
-		var blindStr string
-		switch tok {
-		case token.IDENT:
-			if alias, exists := identMap[lit]; exists {
-				blindStr = alias
-			} else {
-				alias = fmt.Sprintf("ID%d", nextID)
-				identMap[lit] = alias
-				nextID++
-				blindStr = alias
-			}
-		case token.INT, token.FLOAT, token.STRING, token.CHAR, token.IMAG:
-			blindStr = fmt.Sprintf("LIT_%s", tok.String())
-		default:
-			blindStr = rawStr
-		}
-		blind = append(blind, blindStr)
+		blind = append(blind, tokenToBlind(tok, lit, rawStr, identMap, &nextID))
 	}
 
 	return raw, blind, nil
@@ -149,20 +149,8 @@ func funcLength(fn *ast.FuncDecl, fset *token.FileSet) int {
 	return endLine - startLine + 1
 }
 
-// scanFileForDuplication parses filePath and extracts eligible functions
-func scanFileForDuplication(filePath string, minLines int, opts Options) ([]FuncInfo, []ExcludedFunc, *SkippedFile) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
-	if err != nil {
-		return nil, nil, &SkippedFile{File: filePath, Error: err.Error()}
-	}
-
-	// Read source file for token extraction
-	src, err := srcfiles.ReadFile(filePath)
-	if err != nil {
-		return nil, nil, &SkippedFile{File: filePath, Error: err.Error()}
-	}
-
+// processDeclsForFunctions extracts functions from AST declarations
+func processDeclsForFunctions(filePath string, file *ast.File, fset *token.FileSet, src []byte, minLines int, opts Options) ([]FuncInfo, []ExcludedFunc) {
 	var funcs []FuncInfo
 	var excluded []ExcludedFunc
 
@@ -204,6 +192,24 @@ func scanFileForDuplication(filePath string, minLines int, opts Options) ([]Func
 		})
 	}
 
+	return funcs, excluded
+}
+
+// scanFileForDuplication parses filePath and extracts eligible functions
+func scanFileForDuplication(filePath string, minLines int, opts Options) ([]FuncInfo, []ExcludedFunc, *SkippedFile) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	if err != nil {
+		return nil, nil, &SkippedFile{File: filePath, Error: err.Error()}
+	}
+
+	// Read source file for token extraction
+	src, err := srcfiles.ReadFile(filePath)
+	if err != nil {
+		return nil, nil, &SkippedFile{File: filePath, Error: err.Error()}
+	}
+
+	funcs, excluded := processDeclsForFunctions(filePath, file, fset, src, minLines, opts)
 	return funcs, excluded, nil
 }
 
@@ -236,11 +242,9 @@ func sequenceEqual(a, b []string) bool {
 	return true
 }
 
-// Check scans .go files (excluding _test.go) and reports function duplicates
-func Check(paths []string, minLines int, opts Options) (Report, error) {
-	assertf(minLines > 0, "minLines must be positive, got %d", minLines)
-
-	report := Report{
+// collectAndFilterFiles gathers .go files and filters out test files
+func collectAndFilterFiles(paths []string, opts Options) (nonTestFiles []string, report *Report, err error) {
+	report = &Report{
 		Violations:    []Violation{},
 		Skipped:       []SkippedFile{},
 		ExcludedFiles: []string{},
@@ -255,16 +259,19 @@ func Check(paths []string, minLines int, opts Options) (Report, error) {
 	}
 
 	// Filter out _test.go files
-	var nonTestFiles []string
 	for _, f := range filesToCheck {
 		if !strings.HasSuffix(f, "_test.go") {
 			nonTestFiles = append(nonTestFiles, f)
 		}
 	}
 
-	// Scan all eligible files and collect functions
+	return nonTestFiles, report, nil
+}
+
+// scanFilesForFunctions scans eligible files and extracts all functions
+func scanFilesForFunctions(files []string, minLines int, opts Options, report *Report) []FuncInfo {
 	var allFuncs []FuncInfo
-	for _, filePath := range nonTestFiles {
+	for _, filePath := range files {
 		funcs, excludedFuncs, skippedFile := scanFileForDuplication(filePath, minLines, opts)
 		if skippedFile != nil {
 			report.Skipped = append(report.Skipped, *skippedFile)
@@ -275,8 +282,12 @@ func Check(paths []string, minLines int, opts Options) (Report, error) {
 			report.ExcludedFuncs = append(report.ExcludedFuncs, excludedFuncs...)
 		}
 	}
+	return allFuncs
+}
 
-	// Compare all unordered pairs
+// reportDuplicates compares all function pairs and builds violation list
+func reportDuplicates(allFuncs []FuncInfo) []Violation {
+	var violations []Violation
 	seen := make(map[string]bool)
 	for i := 0; i < len(allFuncs); i++ {
 		for j := i + 1; j < len(allFuncs); j++ {
@@ -318,9 +329,23 @@ func Check(paths []string, minLines int, opts Options) (Report, error) {
 				Type:     cloneType,
 				DupLines: dupLines,
 			}
-			report.Violations = append(report.Violations, violation)
+			violations = append(violations, violation)
 		}
 	}
+	return violations
+}
 
-	return report, nil
+// Check scans .go files (excluding _test.go) and reports function duplicates
+func Check(paths []string, minLines int, opts Options) (Report, error) {
+	assertf(minLines > 0, "minLines must be positive, got %d", minLines)
+
+	nonTestFiles, report, err := collectAndFilterFiles(paths, opts)
+	if err != nil {
+		return *report, err
+	}
+
+	allFuncs := scanFilesForFunctions(nonTestFiles, minLines, opts, report)
+	report.Violations = reportDuplicates(allFuncs)
+
+	return *report, nil
 }
