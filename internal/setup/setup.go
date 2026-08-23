@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-//go:embed skill.md references/*
+//go:embed SKILL.md references/*
 var skillContent embed.FS
 
 func assertf(cond bool, format string, args ...any) {
@@ -28,15 +28,15 @@ func assertNoMachineLocalPath(name string, content []byte) {
 // It also writes reference files to baseDir/{prefix}/skills/boy-scout/references/.
 // It returns the path to the written skill file.
 func Run(baseDir string, binaryPath string, prefix string) (string, error) {
-	// Read the embedded skill.md template
-	content, err := skillContent.ReadFile("skill.md")
+	// Read the embedded SKILL.md template
+	content, err := skillContent.ReadFile("SKILL.md")
 	if err != nil {
 		return "", fmt.Errorf("failed to read embedded skill template: %w", err)
 	}
 
-	assertf(len(content) > 0, "embedded skill.md is empty")
-	assertNoMachineLocalPath("skill.md", content)
-	assertf(!strings.Contains(string(content), "gardener"), "embedded skill.md still references old tool name 'gardener'")
+	assertf(len(content) > 0, "embedded SKILL.md is empty")
+	assertNoMachineLocalPath("SKILL.md", content)
+	assertf(!strings.Contains(string(content), "gardener"), "embedded SKILL.md still references old tool name 'gardener'")
 	assertf(prefix != "", "prefix must not be empty")
 
 	// Build the target paths
