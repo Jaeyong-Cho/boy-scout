@@ -421,10 +421,10 @@ func TestRun_TemplateDeclaresFixCapAndPriority(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"CapAtFive", "Cap each run at 5 violations"},
+		{"CapPerType", "Fix one violation per violation-type per run"},
 		{"SeverityWorstFirst", "highest number first"},
 		{"TestFilesDeferredLast", "deferred to the end of the list"},
-		{"CapSkippedDistinctFromUnresolved", "skipped by the cap"},
+		{"ExampleMultipleViolationTypes", "one per kind"},
 	}
 
 	for _, c := range cases {
@@ -560,5 +560,236 @@ func TestRun_TopLevelReferencesPointToCppExamples(t *testing.T) {
 		if !strings.Contains(string(content), wantPath) {
 			t.Errorf("expected %q to reference %q, got:\n%s", filename, wantPath, content)
 		}
+	}
+}
+
+func TestRun_TemplateOrdersDuplicationBySamePackageVsCrossPackage(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// Check that same-package duplication clusters are mentioned in early tier with funclen
+	if !strings.Contains(contentStr, "funclen violations first, then same-package duplication clusters") {
+		t.Errorf("expected skill template to mention same-package duplication clusters after funclen, got:\n%s", contentStr)
+	}
+
+	// Check that cross-package duplication clusters are mentioned in late tier after abstractness
+	if !strings.Contains(contentStr, "then cross-package duplication clusters last") {
+		t.Errorf("expected skill template to mention cross-package duplication clusters last, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_TemplateStatesClusterCountsAsOnePerType(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// Check that the cap paragraph states one violation per type per run
+	if !strings.Contains(contentStr, "Fix one violation per violation-type per run") {
+		t.Errorf("expected skill template to state one violation per type per run, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_TemplateStatesDuplicationClusterFixRule(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// Check for --format=json instruction
+	if !strings.Contains(contentStr, "--format=json") {
+		t.Errorf("expected skill template to mention --format=json for duplication, got:\n%s", contentStr)
+	}
+
+	// Check for JSON field references
+	if !strings.Contains(contentStr, "members") || !strings.Contains(contentStr, "pairs") ||
+		!strings.Contains(contentStr, "dupLines") || !strings.Contains(contentStr, "crossPackage") {
+		t.Errorf("expected skill template to mention JSON fields (members, pairs, dupLines, crossPackage), got:\n%s", contentStr)
+	}
+
+	// Check for atomic edit instruction
+	if !strings.Contains(contentStr, "one atomic multi-file edit") {
+		t.Errorf("expected skill template to mention atomic edit requirement, got:\n%s", contentStr)
+	}
+
+	// Check for extract-a-helper default
+	if !strings.Contains(contentStr, "extract-a-helper") && !strings.Contains(contentStr, "extract one shared helper") {
+		t.Errorf("expected skill template to mention extract-a-helper default, got:\n%s", contentStr)
+	}
+
+	// Check for never delete-one-copy rule
+	if !strings.Contains(contentStr, "never delete-one-copy") {
+		t.Errorf("expected skill template to mention never delete-one-copy rule, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_DuplicationReferenceExplainsWhyAndHow(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "duplication.md")
+	content, err := os.ReadFile(refPath)
+	if err != nil {
+		t.Fatalf("failed to read duplication.md: %v", err)
+	}
+	contentStr := string(content)
+
+	// Check for "Why this is a problem" section
+	if !strings.Contains(contentStr, "Why this is a problem") {
+		t.Errorf("expected duplication.md to contain 'Why this is a problem' section, got:\n%s", contentStr)
+	}
+
+	// Check for "How to fix it" section
+	if !strings.Contains(contentStr, "How to fix it") {
+		t.Errorf("expected duplication.md to contain 'How to fix it' section, got:\n%s", contentStr)
+	}
+
+	// Check for cross-links to meta-pattern.md and functions.md
+	if !strings.Contains(contentStr, "meta-pattern.md") {
+		t.Errorf("expected duplication.md to cross-link meta-pattern.md, got:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, "functions.md") {
+		t.Errorf("expected duplication.md to cross-link functions.md, got:\n%s", contentStr)
+	}
+
+	// Check for Examples section referencing Go file
+	if !strings.Contains(contentStr, "references/lang/go/duplication.md") {
+		t.Errorf("expected duplication.md to reference Go example file, got:\n%s", contentStr)
+	}
+
+	// Check that it notes C++ isn't supported yet
+	if !strings.Contains(contentStr, "not yet supported") || !strings.Contains(contentStr, "C++") {
+		t.Errorf("expected duplication.md to note C++ not yet supported, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_WritesGoDuplicationReferenceExample(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "go", "duplication.md")
+	content, err := os.ReadFile(refPath)
+	if err != nil {
+		t.Fatalf("failed to read Go duplication.md: %v", err)
+	}
+	contentStr := string(content)
+
+	// Check for Go code fences (```go ... ```)
+	if !strings.Contains(contentStr, "```go") {
+		t.Errorf("expected Go duplication.md to contain Go code example, got:\n%s", contentStr)
+	}
+
+	// Check for before/after pattern
+	if !strings.Contains(contentStr, "Problem example") && !strings.Contains(contentStr, "before") {
+		t.Errorf("expected Go duplication.md to have a problem/before example, got:\n%s", contentStr)
+	}
+
+	if !strings.Contains(contentStr, "Good resolve example") && !strings.Contains(contentStr, "after") {
+		t.Errorf("expected Go duplication.md to have a good/after example, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_GoIndexListsDuplicationAndIgnoreDirective(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	indexPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "go", "index.md")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("failed to read Go index.md: %v", err)
+	}
+	indexStr := string(content)
+
+	// Check that duplication is listed in Available Checks
+	if !strings.Contains(indexStr, "duplication") {
+		t.Errorf("expected Go index.md to list duplication in Available Checks, got:\n%s", indexStr)
+	}
+
+	// Check for kind-scoped ignore directive documentation
+	if !strings.Contains(indexStr, "// boy-scout:ignore:duplication") {
+		t.Errorf("expected Go index.md to document // boy-scout:ignore:duplication directive, got:\n%s", indexStr)
+	}
+}
+
+func TestRun_TemplateTableRoutesDuplicationToReferences(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// Check that SKILL.md table references the duplication reference files
+	if !strings.Contains(contentStr, "references/duplication.md") {
+		t.Errorf("expected SKILL.md to reference references/duplication.md, got:\n%s", contentStr)
+	}
+
+	if !strings.Contains(contentStr, "references/lang/go/duplication.md") {
+		t.Errorf("expected SKILL.md to reference references/lang/go/duplication.md, got:\n%s", contentStr)
+	}
+
+	// Check that C++ column notes duplication isn't supported for C++
+	if !strings.Contains(contentStr, "(not yet supported for C++)") {
+		t.Errorf("expected SKILL.md to note duplication not yet supported for C++, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_CppReferencesHaveNoDuplicationFile(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	duplicationPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp", "duplication.md")
+	if _, err := os.Stat(duplicationPath); err == nil {
+		t.Errorf("expected C++ duplication.md to NOT exist, but file was found at %q", duplicationPath)
+	} else if !os.IsNotExist(err) {
+		t.Errorf("unexpected error checking for C++ duplication.md: %v", err)
 	}
 }

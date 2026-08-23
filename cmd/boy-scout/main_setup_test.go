@@ -1027,10 +1027,10 @@ func TestRun_SetupWritesCapAndPriorityGuidance(t *testing.T) {
 
 	// Verify all 4 markers from the cap-and-priority guidance are present
 	markers := []string{
-		"Cap each run at 5 violations",
+		"Fix one violation per violation-type per run",
 		"highest number first",
 		"deferred to the end of the list",
-		"skipped by the cap",
+		"one per kind",
 	}
 
 	for _, marker := range markers {
@@ -1069,5 +1069,55 @@ func TestRun_SetupWritesCppFilelenInstabilityAbstractnessReferences(t *testing.T
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("expected %q to exist, got error: %v", filename, err)
 		}
+	}
+}
+
+func TestRun_SetupWritesDuplicationReferenceFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "agents"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	// Verify top-level duplication reference file exists and is non-empty
+	duplicationPath := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references", "duplication.md")
+	if _, err := os.Stat(duplicationPath); err != nil {
+		t.Errorf("expected duplication.md to exist at %q: %v", duplicationPath, err)
+	}
+	content, err := os.ReadFile(duplicationPath)
+	if err != nil {
+		t.Fatalf("failed to read duplication.md: %v", err)
+	}
+	if len(content) == 0 {
+		t.Errorf("expected duplication.md to be non-empty")
+	}
+
+	// Verify Go duplication reference file exists and is non-empty
+	goPath := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references", "lang", "go", "duplication.md")
+	if _, err := os.Stat(goPath); err != nil {
+		t.Errorf("expected Go duplication.md to exist at %q: %v", goPath, err)
+	}
+	content, err = os.ReadFile(goPath)
+	if err != nil {
+		t.Fatalf("failed to read Go duplication.md: %v", err)
+	}
+	if len(content) == 0 {
+		t.Errorf("expected Go duplication.md to be non-empty")
 	}
 }

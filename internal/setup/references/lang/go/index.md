@@ -23,8 +23,9 @@ Boy-scout for Go supports the following violation kinds:
 1. **funclen** (or `gofunclen`) — Function length violations
 2. **crap** — CRAP (Change Risk Analysis and Prediction) score violations
 3. **filelen** — File length violations
-4. **instability** — Package dependency instability violations
-5. **abstractness** — Package abstraction level violations
+4. **duplication** — Duplicate code pattern violations
+5. **instability** — Package dependency instability violations
+6. **abstractness** — Package abstraction level violations
 
 ## Ignore Comments
 
@@ -35,6 +36,16 @@ func SomeFunction() { // boy-scout:ignore
   // ...
 }
 ```
+
+To ignore a specific violation kind (e.g., just duplication but not funclen), use the kind-scoped directive `// boy-scout:ignore:{kind}`:
+
+```go
+func CalculateTax(base float64) float64 { // boy-scout:ignore:duplication
+  return base * 0.08
+}
+```
+
+This excludes the function from duplication comparison but allows other violations (funclen, crap, etc.) to still be checked and reported.
 
 ## Note on Test Files
 

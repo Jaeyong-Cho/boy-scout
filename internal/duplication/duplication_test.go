@@ -615,3 +615,381 @@ func FuncY() string {
 		t.Fatalf("expected 0 violations below threshold, got %d", len(report.Violations))
 	}
 }
+
+// TestCheck_ReportsClusterForThreeMutuallyDuplicateFunctions verifies clustering of 3-way duplicates
+func TestCheck_ReportsClusterForThreeMutuallyDuplicateFunctions(t *testing.T) {
+	dir := testDir(t)
+
+	// Function A: exact copy
+	writeFile(t, dir, "a.go", `
+package test
+
+func DuplicateA() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	// Function B: exact copy of A (Type-1: A≡B)
+	writeFile(t, dir, "b.go", `
+package test
+
+func DuplicateB() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	// Function C: same structure with renamed identifiers (Type-2: B≈C)
+	writeFile(t, dir, "c.go", `
+package test
+
+func DuplicateC() error {
+	a := 1
+	b := 2
+	c := a + b
+	return nil
+}
+`)
+
+	opts := Options{ExcludeFuncs: []string{}, ExcludeFiles: []string{}}
+	report, err := Check([]string{dir}, 5, opts)
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Should have 3 pairwise violations: A-B (Type-1), A-C (Type-2), B-C (Type-2)
+	if len(report.Violations) != 3 {
+		t.Fatalf("expected 3 violations, got %d", len(report.Violations))
+	}
+
+	// Should have 1 cluster
+	if len(report.Clusters) != 1 {
+		t.Fatalf("expected 1 cluster, got %d", len(report.Clusters))
+	}
+
+	cluster := report.Clusters[0]
+
+	// Cluster should have 3 members
+	if len(cluster.Members) != 3 {
+		t.Fatalf("expected 3 cluster members, got %d", len(cluster.Members))
+	}
+
+	// Cluster should have 3 pairs
+	if len(cluster.Pairs) != 3 {
+		t.Fatalf("expected 3 pairs in cluster, got %d", len(cluster.Pairs))
+	}
+
+	// Each pair should keep its own type
+	hasType1 := false
+	hasType2 := false
+	for _, pair := range cluster.Pairs {
+		if pair.Type == "Type-1" {
+			hasType1 = true
+		}
+		if pair.Type == "Type-2" {
+			hasType2 = true
+		}
+	}
+	if !hasType1 || !hasType2 {
+		t.Errorf("expected Type-1 and Type-2 pairs, got %v", cluster.Pairs)
+	}
+
+	// DupLines should be sum of all pairs in the cluster
+	expectedDupLines := 0
+	for _, pair := range cluster.Pairs {
+		expectedDupLines += pair.DupLines
+	}
+	if cluster.DupLines != expectedDupLines {
+		t.Errorf("expected DupLines=%d, got %d", expectedDupLines, cluster.DupLines)
+	}
+
+	// All members should be in same package (not CrossPackage)
+	if cluster.CrossPackage {
+		t.Errorf("expected CrossPackage=false for same-package cluster")
+	}
+}
+
+// TestCheck_ClusterCrossPackageFlagTrueWhenMembersSpanPackages verifies cross-package detection
+func TestCheck_ClusterCrossPackageFlagTrueWhenMembersSpanPackages(t *testing.T) {
+	dir := testDir(t)
+
+	// Function A in package directory
+	writeFile(t, dir, "pkg1.go", `
+package pkg1
+
+func DuplicateA() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	// Function B in different package directory
+	pkgSubdir := filepath.Join(dir, "sub")
+	if err := os.Mkdir(pkgSubdir, 0755); err != nil {
+		t.Fatalf("failed to create subdir: %v", err)
+	}
+
+	pkgSubdirPath := filepath.Join(dir, "sub", "pkg2.go")
+	if err := os.WriteFile(pkgSubdirPath, []byte(`
+package pkg2
+
+func DuplicateB() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	opts := Options{ExcludeFuncs: []string{}, ExcludeFiles: []string{}}
+	report, err := Check([]string{dir}, 5, opts)
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Should have 1 violation
+	if len(report.Violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(report.Violations))
+	}
+
+	// Should have 1 cluster
+	if len(report.Clusters) != 1 {
+		t.Fatalf("expected 1 cluster, got %d", len(report.Clusters))
+	}
+
+	cluster := report.Clusters[0]
+
+	// Cluster should have 2 members
+	if len(cluster.Members) != 2 {
+		t.Fatalf("expected 2 cluster members, got %d", len(cluster.Members))
+	}
+
+	// CrossPackage should be true (members in different directories)
+	if !cluster.CrossPackage {
+		t.Errorf("expected CrossPackage=true for cross-package cluster")
+	}
+}
+
+// TestCheck_ClusterOfTwoDegeneratesToSinglePair verifies 2-member cluster matches single pairwise violation
+func TestCheck_ClusterOfTwoDegeneratesToSinglePair(t *testing.T) {
+	dir := testDir(t)
+
+	// Reuse the CalculateTax/CalculateFee fixture from slice 1
+	writeFile(t, dir, "tax.go", `
+package billing
+
+func CalculateTax(amount float64) float64 {
+	rate := 0.08
+	total := amount * rate
+	if total < 0 {
+		total = 0
+	}
+	return total
+}
+`)
+
+	writeFile(t, dir, "fee.go", `
+package billing
+
+func CalculateFee(price float64) float64 {
+	pct := 0.08
+	result := price * pct
+	if result < 0 {
+		result = 0
+	}
+	return result
+}
+`)
+
+	opts := Options{ExcludeFuncs: []string{}, ExcludeFiles: []string{}}
+	report, err := Check([]string{dir}, 5, opts)
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Should have exactly 1 violation (the single pair)
+	if len(report.Violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(report.Violations))
+	}
+
+	// Should have exactly 1 cluster
+	if len(report.Clusters) != 1 {
+		t.Fatalf("expected 1 cluster, got %d", len(report.Clusters))
+	}
+
+	cluster := report.Clusters[0]
+
+	// Cluster should have 2 members
+	if len(cluster.Members) != 2 {
+		t.Fatalf("expected 2 cluster members, got %d", len(cluster.Members))
+	}
+
+	// Cluster should have exactly 1 pair
+	if len(cluster.Pairs) != 1 {
+		t.Fatalf("expected 1 pair in cluster, got %d", len(cluster.Pairs))
+	}
+
+	// The cluster's single pair should match the report's single violation
+	if cluster.Pairs[0] != report.Violations[0] {
+		t.Errorf("cluster pair does not match violation")
+	}
+
+	// Cluster DupLines should equal the violation's DupLines
+	if cluster.DupLines != report.Violations[0].DupLines {
+		t.Errorf("expected DupLines=%d, got %d", report.Violations[0].DupLines, cluster.DupLines)
+	}
+}
+
+// TestCheck_ClustersSortedByDupLinesDescending verifies cluster sorting order
+func TestCheck_ClustersSortedByDupLinesDescending(t *testing.T) {
+	dir := testDir(t)
+
+	// Create a small duplicate pair (completely different from large pair)
+	// Must be at least 5 lines to pass minLines filter
+	writeFile(t, dir, "small1.go", `
+package test
+
+func FetchUserSmall() int {
+	x := 1
+	y := 2
+	return x + y
+}
+`)
+
+	writeFile(t, dir, "small2.go", `
+package test
+
+func FetchDataSmall() int {
+	x := 1
+	y := 2
+	return x + y
+}
+`)
+
+	// Create a large duplicate pair with complex logic
+	writeFile(t, dir, "large1.go", `
+package test
+
+func ProcessLargeA(x int) int {
+	a := x + 1
+	b := a * 2
+	c := b - 1
+	d := c / 2
+	e := d + 5
+	f := e * 3
+	g := f - 2
+	h := g + 1
+	i := h * 2
+	j := i - 3
+	k := j + 4
+	l := k * 2
+	m := l - 1
+	n := m + 2
+	o := n * 3
+	p := o - 1
+	q := p + 2
+	return q
+}
+`)
+
+	writeFile(t, dir, "large2.go", `
+package test
+
+func ProcessLargeB(y int) int {
+	a := y + 1
+	b := a * 2
+	c := b - 1
+	d := c / 2
+	e := d + 5
+	f := e * 3
+	g := f - 2
+	h := g + 1
+	i := h * 2
+	j := i - 3
+	k := j + 4
+	l := k * 2
+	m := l - 1
+	n := m + 2
+	o := n * 3
+	p := o - 1
+	q := p + 2
+	return q
+}
+`)
+
+	opts := Options{ExcludeFuncs: []string{}, ExcludeFiles: []string{}}
+	report, err := Check([]string{dir}, 5, opts)
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Should have 2 clusters
+	if len(report.Clusters) != 2 {
+		t.Fatalf("expected 2 clusters, got %d", len(report.Clusters))
+	}
+
+	// First cluster should be the larger one (sorted by DupLines descending)
+	if report.Clusters[0].DupLines < report.Clusters[1].DupLines {
+		t.Errorf("clusters not sorted by DupLines descending: %d, %d", report.Clusters[0].DupLines, report.Clusters[1].DupLines)
+	}
+}
+
+// TestCheck_ClusterMinimumMembersAssertion verifies the defensive cluster-size assert
+func TestCheck_ClusterMinimumMembersAssertion(t *testing.T) {
+	// This test verifies the assertion is there but can't be triggered via the public API,
+	// since every Violation connects exactly 2 distinct functions by construction,
+	// so union-find can never produce a singleton group. The assertion is defensive insurance
+	// against a future refactor, same as the existing i != j assert in reportDuplicates.
+	dir := testDir(t)
+
+	writeFile(t, dir, "a.go", `
+package test
+
+func Duplicate() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	writeFile(t, dir, "b.go", `
+package test
+
+func Duplicate2() error {
+	x := 1
+	y := 2
+	z := x + y
+	return nil
+}
+`)
+
+	opts := Options{ExcludeFuncs: []string{}, ExcludeFiles: []string{}}
+
+	// This should complete without panic (the assert never fires on normal input)
+	report, err := Check([]string{dir}, 5, opts)
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	// Verify the check completed successfully
+	if len(report.Clusters) != 1 {
+		t.Errorf("expected 1 cluster, got %d", len(report.Clusters))
+	}
+
+	// All clusters should have >= 2 members (guaranteed by construction)
+	for _, cluster := range report.Clusters {
+		if len(cluster.Members) < 2 {
+			t.Errorf("cluster has fewer than 2 members (this violates the postcondition): %d", len(cluster.Members))
+		}
+	}
+}
