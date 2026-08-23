@@ -23,6 +23,7 @@ The `boy-scout go instability` subcommand:
 - Only first-party packages count (packages under the scanned module's own `go.mod` `module` path)
 - Stdlib and third-party imports are invisible to the graph — not counted toward instability, never appear as nodes
 - `_test.go` files are excluded from both the file list and the import scan for a package
+- Package import paths are resolved from absolute file paths, so `BuildGraph` behaves identically whether `paths` is given as `.` (the CLI default) or as an absolute path
 
 ### Instability formula
 For a package P:

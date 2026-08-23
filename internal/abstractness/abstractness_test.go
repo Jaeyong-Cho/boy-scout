@@ -7,6 +7,101 @@ import (
 	"testing"
 )
 
+// TestCheckWithSurfaceRatio_NoPanicWithRelativePath tests that CheckWithSurfaceRatio does not panic
+// when given a relative path (like ".") and encounters a Zone-of-Pain package with empty exported types.
+// This is the regression test for the BuildGraph relative/absolute path mismatch bug.
+func TestCheckWithSurfaceRatio_NoPanicWithRelativePath(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/test\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create pkg/a: zero exported interfaces/structs (A=0)
+	aPkgDir := filepath.Join(tempDir, "pkg", "a")
+	os.MkdirAll(aPkgDir, 0755)
+	aCode := `package a
+
+import "example.com/test/pkg/b"
+
+// UseB is the only exported function; no exported types
+func UseB() { b.B() }
+`
+	if err := os.WriteFile(filepath.Join(aPkgDir, "a.go"), []byte(aCode), 0644); err != nil {
+		t.Fatalf("failed to write pkg/a/a.go: %v", err)
+	}
+
+	// Create pkg/b: one exported function (imported by a, imports nothing)
+	bPkgDir := filepath.Join(tempDir, "pkg", "b")
+	os.MkdirAll(bPkgDir, 0755)
+	bCode := `package b
+
+func B() {}
+`
+	if err := os.WriteFile(filepath.Join(bPkgDir, "b.go"), []byte(bCode), 0644); err != nil {
+		t.Fatalf("failed to write pkg/b/b.go: %v", err)
+	}
+
+	// Make pkg/a a Zone-of-Pain candidate (stable: Ca=1, Ce=0, I=0.0, A=0.0, signedD=-1.0)
+	// But we need to create an importer of pkg/a to give it Ca > 0.
+	// For simplicity, we'll just rely on pkg/a being imported by pkg/b is not enough.
+	// Actually, re-reading the test requirement: "zero callers/imports besides being imported once"
+	// means Ca=1, Ce=0, so signedD = 0 + 0 - 1 = -1.0, which is Pain under minDistance=0.5.
+	// Let's add a third package to import pkg/a.
+	cPkgDir := filepath.Join(tempDir, "pkg", "c")
+	os.MkdirAll(cPkgDir, 0755)
+	cCode := `package c
+
+import "example.com/test/pkg/a"
+
+func C() { a.UseB() }
+`
+	if err := os.WriteFile(filepath.Join(cPkgDir, "c.go"), []byte(cCode), 0644); err != nil {
+		t.Fatalf("failed to write pkg/c/c.go: %v", err)
+	}
+
+	// Save original cwd and chdir into temp module root
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	// Use recover() to guard against panics
+	var panicValue interface{}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicValue = r
+			}
+		}()
+
+		// Call CheckWithSurfaceRatio with relative path (the bug scenario)
+		report, err := CheckWithSurfaceRatio([]string{"."}, 0.5, 0.5, Options{})
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify that pkg/a is in the report without causing a panic
+		// (It may or may not be reported depending on SurfaceRatio, but the key is: no panic)
+		// We just want to ensure the function completes without panic
+		_ = report
+	}()
+
+	if panicValue != nil {
+		t.Fatalf("expected no panic, but recovered: %v", panicValue)
+	}
+}
+
 // TestCheck_FlagsZoneOfPain tests that a concrete stable package is flagged as Pain.
 // Given: legacydb (6 exported structs, 0 interfaces → A=0.0; Ca=8, Ce=0 → I=0.0)
 // Expected: Zone="Pain", Distance=1.0

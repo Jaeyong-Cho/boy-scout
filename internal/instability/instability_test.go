@@ -404,6 +404,84 @@ func TestBuildGraph_TestOnlyDirectoryProducesNoNode(t *testing.T) {
 	}
 }
 
+// TestBuildGraph_RelativePathResolvesCorrectPackages tests that BuildGraph correctly
+// attributes files to packages when given relative paths like "." (the CLI default)
+func TestBuildGraph_RelativePathResolvesCorrectPackages(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/test\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create pkg/a with a.go importing pkg/b
+	aPkgDir := filepath.Join(tempDir, "pkg", "a")
+	os.MkdirAll(aPkgDir, 0755)
+	aCode := `package a
+
+import "example.com/test/pkg/b"
+
+func UseB() { b.B() }
+`
+	if err := os.WriteFile(filepath.Join(aPkgDir, "a.go"), []byte(aCode), 0644); err != nil {
+		t.Fatalf("failed to write pkg/a/a.go: %v", err)
+	}
+
+	// Create pkg/b with b.go
+	bPkgDir := filepath.Join(tempDir, "pkg", "b")
+	os.MkdirAll(bPkgDir, 0755)
+	bCode := `package b
+
+func B() {}
+`
+	if err := os.WriteFile(filepath.Join(bPkgDir, "b.go"), []byte(bCode), 0644); err != nil {
+		t.Fatalf("failed to write pkg/b/b.go: %v", err)
+	}
+
+	// Save original cwd and chdir into temp module root
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	// Call BuildGraph with relative path (the bug scenario)
+	graph, err := BuildGraph([]string{"."}, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify that both packages have Files correctly populated
+	aPkgStats, aExists := graph.Packages["example.com/test/pkg/a"]
+	if !aExists {
+		t.Fatalf("expected example.com/test/pkg/a in graph, got packages: %v", graph.Packages)
+	}
+	if len(aPkgStats.Files) != 1 {
+		t.Fatalf("expected 1 file in pkg/a, got %d files: %v", len(aPkgStats.Files), aPkgStats.Files)
+	}
+
+	bPkgStats, bExists := graph.Packages["example.com/test/pkg/b"]
+	if !bExists {
+		t.Fatalf("expected example.com/test/pkg/b in graph, got packages: %v", graph.Packages)
+	}
+	if len(bPkgStats.Files) != 1 {
+		t.Fatalf("expected 1 file in pkg/b, got %d files: %v", len(bPkgStats.Files), bPkgStats.Files)
+	}
+
+	// Verify that the bogus catch-all package does NOT exist
+	_, catchAllExists := graph.Packages["example.com/test/"]
+	if catchAllExists {
+		t.Fatalf("unexpected bogus catch-all package 'example.com/test/' in graph (files should be in real packages)")
+	}
+}
+
 // TestCheck_MinGapFiltersListNotSummary tests that min-gap filters violations but not summary stats
 func TestCheck_MinGapFiltersListNotSummary(t *testing.T) {
 	tempDir := t.TempDir()

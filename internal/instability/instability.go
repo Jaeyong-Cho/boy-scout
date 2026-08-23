@@ -168,7 +168,10 @@ func BuildGraph(paths []string, opts Options) (Graph, error) {
 
 		// Determine package directory and its import path
 		dir := filepath.Dir(filePath)
-		relDir, _ := filepath.Rel(root, dir)
+		absDir, err := filepath.Abs(dir)
+		assertf(err == nil, "filepath.Abs failed for dir %q: %v", dir, err)
+		relDir, err := filepath.Rel(root, absDir)
+		assertf(err == nil, "filepath.Rel failed for root %q dir %q: %v", root, absDir, err)
 		pkgImportPath := moduleName
 		if relDir != "." {
 			pkgImportPath = moduleName + "/" + filepath.ToSlash(relDir)

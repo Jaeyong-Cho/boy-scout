@@ -204,6 +204,120 @@ func TestRun_GofunclenDefaultsToCurrentDir(t *testing.T) {
 	}
 }
 
+func TestRun_AbstractnessDefaultPathDoesNotPanic(t *testing.T) {
+	// Create a temp module with pkg/a and pkg/b to test that "go abstractness"
+	// with no path argument (defaults to ".") does not panic when BuildGraph
+	// must resolve relative paths correctly.
+	tmpDir := t.TempDir()
+	initModule(t, tmpDir)
+
+	// Create pkg/a: zero exported types (will be Zone-of-Pain candidate)
+	aPkgDir := filepath.Join(tmpDir, "pkg", "a")
+	os.MkdirAll(aPkgDir, 0755)
+	aCode := `package a
+
+import "test/pkg/b"
+
+func UseB() { b.B() }
+`
+	writeGoFile(t, aPkgDir, "a.go", aCode)
+
+	// Create pkg/b
+	bPkgDir := filepath.Join(tmpDir, "pkg", "b")
+	os.MkdirAll(bPkgDir, 0755)
+	bCode := `package b
+
+func B() {}
+`
+	writeGoFile(t, bPkgDir, "b.go", bCode)
+
+	// Create pkg/c to import pkg/a (make it a Pain candidate with Ca=1)
+	cPkgDir := filepath.Join(tmpDir, "pkg", "c")
+	os.MkdirAll(cPkgDir, 0755)
+	cCode := `package c
+
+import "test/pkg/a"
+
+func C() { a.UseB() }
+`
+	writeGoFile(t, cPkgDir, "c.go", cCode)
+
+	// Guard against panics
+	var panicValue interface{}
+	var stdoutBuf, stderrBuf bytes.Buffer
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicValue = r
+			}
+		}()
+
+		// Note: we pass no path argument, so it defaults to "."
+		run([]string{"go", "abstractness"}, &stdoutBuf, &stderrBuf)
+	}()
+
+	if panicValue != nil {
+		t.Fatalf("expected no panic, but recovered: %v", panicValue)
+	}
+}
+
+func TestRun_AllDefaultPathDoesNotPanic(t *testing.T) {
+	// Create a temp module with pkg/a and pkg/b to test that "go all"
+	// with no path argument (defaults to ".") does not panic.
+	// This is the exact command from the bug report: ./bin/boy-scout go all
+	tmpDir := t.TempDir()
+	initModule(t, tmpDir)
+
+	// Create pkg/a: zero exported types (will be Zone-of-Pain candidate)
+	aPkgDir := filepath.Join(tmpDir, "pkg", "a")
+	os.MkdirAll(aPkgDir, 0755)
+	aCode := `package a
+
+import "test/pkg/b"
+
+func UseB() { b.B() }
+`
+	writeGoFile(t, aPkgDir, "a.go", aCode)
+
+	// Create pkg/b
+	bPkgDir := filepath.Join(tmpDir, "pkg", "b")
+	os.MkdirAll(bPkgDir, 0755)
+	bCode := `package b
+
+func B() {}
+`
+	writeGoFile(t, bPkgDir, "b.go", bCode)
+
+	// Create pkg/c to import pkg/a
+	cPkgDir := filepath.Join(tmpDir, "pkg", "c")
+	os.MkdirAll(cPkgDir, 0755)
+	cCode := `package c
+
+import "test/pkg/a"
+
+func C() { a.UseB() }
+`
+	writeGoFile(t, cPkgDir, "c.go", cCode)
+
+	// Guard against panics
+	var panicValue interface{}
+	var stdoutBuf, stderrBuf bytes.Buffer
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicValue = r
+			}
+		}()
+
+		// Note: we pass no path argument, so it defaults to "."
+		run([]string{"go", "all"}, &stdoutBuf, &stderrBuf)
+	}()
+
+	if panicValue != nil {
+		t.Fatalf("expected no panic, but recovered: %v", panicValue)
+	}
+}
+
 func TestRun_JSONFormatOutputsValidSchema(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpFile := writeGoFile(t, tmpDir, "viol.go", longFuncSrc("main", "Violating", 105))

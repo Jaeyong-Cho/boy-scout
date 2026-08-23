@@ -21,3 +21,4 @@ The first check implemented is instability, which flags packages that are stable
 - [instability](./instability.md)
 - [abstractness](./abstractness.md)
 - [exclude-test-files-from-dependency-graph](./exclude-test-files-from-dependency-graph.md)
+- [fix-buildgraph-relative-path-mismatch](./fix-buildgraph-relative-path-mismatch.md)
