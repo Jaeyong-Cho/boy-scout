@@ -9,6 +9,9 @@ import (
 	"strings"
 )
 
+// version is the built version of boy-scout, overridable via -ldflags -X main.version=...
+var version = "dev"
+
 func assertf(cond bool, format string, args ...any) {
 	if !cond {
 		panic(fmt.Sprintf(format, args...))
@@ -103,6 +106,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Handle setup separately (lang-less)
 	if args[0] == "setup" {
 		return runSetup(args[1:], os.Stdin, stdout, stderr)
+	}
+
+	// Handle version separately (lang-less)
+	if args[0] == "version" {
+		fmt.Fprintf(stdout, "boy-scout %s\n", version)
+		return 0
 	}
 
 	return dispatchLang(args[0], args[1:], stdout, stderr)

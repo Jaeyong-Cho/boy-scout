@@ -1248,3 +1248,24 @@ func Bad( {
 		t.Errorf("expected exit code 2 (skipped file priority), got %d", exitCode)
 	}
 }
+
+// TestRun_VersionPrintsBuiltVersion verifies that the version subcommand
+// prints the built version string (set via -ldflags -X main.version=...).
+func TestRun_VersionPrintsBuiltVersion(t *testing.T) {
+	// Override the version variable directly in the test.
+	oldVersion := version
+	t.Cleanup(func() { version = oldVersion })
+	version = "v0.5.0"
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"version"}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Errorf("version subcommand should exit 0, got %d; stderr: %s", exitCode, stderr.String())
+	}
+
+	expectedOutput := "boy-scout v0.5.0\n"
+	if stdout.String() != expectedOutput {
+		t.Errorf("expected output %q, got %q", expectedOutput, stdout.String())
+	}
+}

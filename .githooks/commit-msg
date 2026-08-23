@@ -16,6 +16,7 @@ fi
 
 # Check for Conventional Commits format: <type>(<scope>)?!?: <description>
 # Types: feat, fix, docs, style, refactor, perf, test, chore
+# Keep in sync with internal/release/release.go if the Conventional Commits convention changes.
 if [[ "$first_line" =~ ^(feat|fix|docs|style|refactor|perf|test|chore)(\([a-z0-9-]+\))?!?: ]]; then
   exit 0
 fi
