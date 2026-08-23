@@ -10,3 +10,9 @@ An instability violation means a package is importing something less stable than
 
 Point the dependency the other way. If `domain` (stable, depended on by everything) is importing `httpapi` (unstable, changes to add new routes), invert it: move the glue that lives in `domain` but calls `httpapi` into `httpapi` instead. `domain` no longer imports `httpapi`, only `httpapi` imports `domain`. Now when `httpapi` changes, it doesn't force `domain` to change. If a simple import inversion is impossible (it would create a cycle), you need to extract a new package that both can depend on — one small, stable, depended-on-by-both package that holds just the boundary interface, not the implementation.
 
+## Examples
+
+For a concrete before/after code example in your language:
+
+- **Go:** See `references/lang/go/instability.md`
+- **C++:** Not yet supported for C++

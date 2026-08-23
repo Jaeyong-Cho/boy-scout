@@ -10,3 +10,9 @@ A package lives in one of two healthy zones: either it's abstract (mostly interf
 
 Extract the stable boundary (the interfaces and types that your dependents actually use) into a separate small, abstract, deep module. Move the concrete implementations into a different package. Now the dependents import only the abstract boundary, not the concrete details. Changes to the implementations don't touch the boundary, so dependents don't need to change. If your package is in the Zone of Uselessness (abstract but unused), question whether it should exist — it may be premature abstraction. More often, it's in the Pain zone and needs the extraction fix above.
 
+## Examples
+
+For a concrete before/after code example in your language:
+
+- **Go:** See `references/lang/go/abstractness.md`
+- **C++:** Not yet supported for C++

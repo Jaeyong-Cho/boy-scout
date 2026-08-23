@@ -13,3 +13,9 @@ A function that's too large is doing more than one thing at one level of abstrac
 
 Extract each logical step into its own well-named helper function. The original function should read like a table of contents: call `validateInput()`, then `computeResult()`, then `recordMetrics()`, with each helper carrying one level of responsibility. Name each helper so its purpose is obvious without reading its body. Don't just trim lines by removing comments or inlining constants; actually separate the concerns. After extracting, `boy-scout go all` should report the original function fixed and (usually) not create new violations in the newly extracted helpers, because each one now holds just one thing.
 
+## Examples
+
+For a concrete before/after code example in your language:
+
+- **Go:** See `references/lang/go/funclen.md`
+- **C++:** See `references/lang/cpp/funclen.md`

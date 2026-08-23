@@ -12,3 +12,9 @@ A file that's too large is mixing multiple concerns. It holds more than one job 
 
 Split the file along natural seams, where each concern naturally separates. high cohesion: each new file has one clear job, and its functions work closely together toward that job. loose coupling: each file knows the minimum it needs to know about the others — import from the other file only the small public interface, not internal details. After splitting, `boy-scout go all` should report the original file fixed. If the split creates new violations (e.g., a new instability violation because the seam you chose created a dependency cycle), fix those in later steps.
 
+## Examples
+
+For a concrete before/after code example in your language:
+
+- **Go:** See `references/lang/go/filelen.md`
+- **C++:** Not yet supported for C++
