@@ -1181,17 +1181,33 @@ func init() {
 // Then: deepcache is NOT flagged (test funcs excluded, real SurfaceRatio stays under gate)
 func TestCheck_TestFuncsNotCountedAsExported(t *testing.T) {
 	tempDir := t.TempDir()
+	writeGoMod(t, tempDir, "example.com/cache")
+	setupDeepCachePackage(t, tempDir)
+	setupCallerPackages(t, tempDir, 8)
 
-	// Write go.mod
-	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/cache\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("failed to write go.mod: %v", err)
+	report, err := CheckWithSurfaceRatio([]string{tempDir}, 0.5, 0.5, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Create deepcache package: 3 exported types, ~21 unexported helpers
+	verifyDeepCacheNotFlagged(t, report)
+}
+
+func writeGoMod(t *testing.T, tempDir, moduleName string) {
+	content := fmt.Sprintf("module %s\ngo 1.24\n", moduleName)
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+}
+
+func setupDeepCachePackage(t *testing.T, tempDir string) {
 	deepcacheDir := filepath.Join(tempDir, "deepcache")
 	os.Mkdir(deepcacheDir, 0755)
+	writeDeepCacheCode(t, deepcacheDir)
+	writeDeepCacheTests(t, deepcacheDir)
+}
 
-	// Public interface with 3 exported structs
+func writeDeepCacheCode(t *testing.T, deepcacheDir string) {
 	deepcacheCode := `package deepcache
 
 type Cache struct {
@@ -1233,13 +1249,12 @@ func validateKey(key string) error { return nil }
 func validateSize(sz int) error { return nil }
 func computeHash(data []byte) uint64 { return 0 }
 `
-
 	if err := os.WriteFile(filepath.Join(deepcacheDir, "deepcache.go"), []byte(deepcacheCode), 0644); err != nil {
 		t.Fatalf("failed to write deepcache.go: %v", err)
 	}
+}
 
-	// Create deepcache_test.go with 25 TestBehaviorN functions
-	// These should NOT be counted as exported symbols
+func writeDeepCacheTests(t *testing.T, deepcacheDir string) {
 	testCode := `package deepcache
 
 import "testing"
@@ -1270,13 +1285,13 @@ func TestBehavior23(t *testing.T) {}
 func TestBehavior24(t *testing.T) {}
 func TestBehavior25(t *testing.T) {}
 `
-
 	if err := os.WriteFile(filepath.Join(deepcacheDir, "deepcache_test.go"), []byte(testCode), 0644); err != nil {
 		t.Fatalf("failed to write deepcache_test.go: %v", err)
 	}
+}
 
-	// Create 8 caller packages importing deepcache (Ca=8, Ce=0 → I=0.0)
-	for i := 1; i <= 8; i++ {
+func setupCallerPackages(t *testing.T, tempDir string, count int) {
+	for i := 1; i <= count; i++ {
 		callerDir := filepath.Join(tempDir, fmt.Sprintf("caller%d", i))
 		os.Mkdir(callerDir, 0755)
 		callerCode := fmt.Sprintf(`package caller%d
@@ -1291,14 +1306,9 @@ func Call%d(cfg deepcache.Config) {
 			t.Fatalf("failed to write caller%d: %v", i, err)
 		}
 	}
+}
 
-	report, err := CheckWithSurfaceRatio([]string{tempDir}, 0.5, 0.5, Options{})
-
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// deepcache should NOT be in violations (test funcs excluded, real ratio stays under gate)
+func verifyDeepCacheNotFlagged(t *testing.T, report Report) {
 	for i := range report.Violations {
 		if report.Violations[i].ImportPath == "example.com/cache/deepcache" {
 			t.Fatalf("deepcache should not be flagged (test funcs excluded), got SurfaceRatio=%f (includes TestBehaviorN?)", report.Violations[i].SurfaceRatio)

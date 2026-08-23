@@ -147,94 +147,99 @@ func CheckWithSurfaceRatio(paths []string, minDistance float64, minSurfaceRatio 
 	assertf(minDistance >= 0, "minDistance must be non-negative, got %f", minDistance)
 	assertf(minSurfaceRatio >= 0, "minSurfaceRatio must be non-negative, got %f", minSurfaceRatio)
 
-	report := Report{
-		Violations:    []PackageDiagnosis{},
-		Skipped:       []SkippedFile{},
-		TotalPackages: 0,
-	}
-
-	// Build the graph using instability package
 	graph, err := instability.BuildGraph(paths, instability.Options{
 		ExcludeFiles: opts.ExcludeFiles,
 		ExcludeFuncs: opts.ExcludeFuncs,
 		Debug:        opts.Debug,
 	})
 	if err != nil {
-		return report, err
+		return Report{}, err
 	}
 
-	report.Skipped = append(report.Skipped, graph.Skipped...)
+	violations := []PackageDiagnosis{}
+	skipped := append([]SkippedFile{}, graph.Skipped...)
 
-	// For each package in the graph, compute abstractness and diagnosis
 	for importPath, pkgStats := range graph.Packages {
-		// Count exported types in this package
-		interfaces, structs, skipped := countExportedTypes(pkgStats.Files)
-		report.Skipped = append(report.Skipped, skipped...)
-
-		// Skip this package's diagnosis if we couldn't parse its files
-		if len(skipped) > 0 {
-			continue
+		diag, skipErr := diagnosePackage(importPath, pkgStats, minDistance, minSurfaceRatio, opts.IgnoreDeepModuleGate)
+		if skipErr != nil {
+			skipped = append(skipped, skipErr...)
 		}
-
-		// Compute abstractness
-		total := interfaces + structs
-		var abstractness float64
-		if total == 0 {
-			// No division happens at 0/0; A = 0 for packages with no exported types
-			assertf(total == 0, "zero exported types implies A = 0, no division")
-			abstractness = 0.0
-		} else {
-			abstractness = float64(interfaces) / float64(total)
+		if diag != nil {
+			violations = append(violations, *diag)
 		}
-
-		// Compute signed distance
-		signedD := abstractness + pkgStats.Instability - 1.0
-		distance := signedD
-		if distance < 0 {
-			distance = -distance
-		}
-
-		// Determine zone
-		var zone string
-		isPain := signedD < -minDistance
-		isUselessness := signedD > minDistance
-
-		assertf(!(isPain && isUselessness), "package cannot be both Pain and Uselessness")
-
-		var surfaceRatioVal float64 = 0
-		if isPain {
-			zone = "Pain"
-			// Compute surface ratio for Pain candidates to decide if it should be reported
-			ratio, err := surfaceRatio(pkgStats.Files)
-			if err == nil {
-				surfaceRatioVal = ratio
-			}
-			// Only report if shallow enough (or gate is disabled)
-			if !opts.IgnoreDeepModuleGate && surfaceRatioVal < minSurfaceRatio {
-				continue
-			}
-		} else if isUselessness {
-			zone = "Uselessness"
-			// Uselessness rows always have SurfaceRatio=0 (gate does not apply)
-			surfaceRatioVal = 0
-			assertf(surfaceRatioVal == 0, "Uselessness row must have SurfaceRatio==0, got %f", surfaceRatioVal)
-		} else {
-			// No violation
-			continue
-		}
-
-		report.Violations = append(report.Violations, PackageDiagnosis{
-			ImportPath:   importPath,
-			Abstractness: abstractness,
-			Instability:  pkgStats.Instability,
-			Distance:     distance,
-			Zone:         zone,
-			SurfaceRatio: surfaceRatioVal,
-		})
 	}
 
-	// Count total packages analyzed (those with computable instability = those in graph)
-	report.TotalPackages = len(graph.Packages)
+	return Report{
+		Violations:    violations,
+		Skipped:       skipped,
+		TotalPackages: len(graph.Packages),
+	}, nil
+}
 
-	return report, nil
+// diagnosePackage analyzes a single package for abstractness/instability violations.
+// Returns nil diagnosis if the package is compliant or has parse errors.
+func diagnosePackage(importPath string, pkgStats instability.PackageStats, minDistance, minSurfaceRatio float64, ignoreDeepModuleGate bool) (*PackageDiagnosis, []SkippedFile) {
+	interfaces, structs, skipped := countExportedTypes(pkgStats.Files)
+	if len(skipped) > 0 {
+		return nil, skipped
+	}
+
+	abstractness := computeAbstractness(interfaces, structs)
+	signedD := abstractness + pkgStats.Instability - 1.0
+	distance := absFloat64(signedD)
+
+	zone, surfaceRatioVal, shouldReport := determineZone(signedD, minDistance, minSurfaceRatio, ignoreDeepModuleGate, pkgStats.Files)
+	if !shouldReport {
+		return nil, nil
+	}
+
+	return &PackageDiagnosis{
+		ImportPath:   importPath,
+		Abstractness: abstractness,
+		Instability:  pkgStats.Instability,
+		Distance:     distance,
+		Zone:         zone,
+		SurfaceRatio: surfaceRatioVal,
+	}, nil
+}
+
+// computeAbstractness returns the ratio of exported interfaces to (interfaces + structs).
+func computeAbstractness(interfaces, structs int) float64 {
+	total := interfaces + structs
+	if total == 0 {
+		assertf(total == 0, "zero exported types implies A = 0, no division")
+		return 0.0
+	}
+	return float64(interfaces) / float64(total)
+}
+
+// absFloat64 returns the absolute value of x.
+func absFloat64(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// determineZone classifies a package as Pain/Uselessness and applies surface-ratio gating.
+// Returns (zone, surfaceRatio, shouldReport).
+func determineZone(signedD, minDistance, minSurfaceRatio float64, ignoreDeepModuleGate bool, files []string) (string, float64, bool) {
+	isPain := signedD < -minDistance
+	isUselessness := signedD > minDistance
+	assertf(!(isPain && isUselessness), "package cannot be both Pain and Uselessness")
+
+	if isPain {
+		ratio, _ := surfaceRatio(files)
+		if !ignoreDeepModuleGate && ratio < minSurfaceRatio {
+			return "", 0, false
+		}
+		return "Pain", ratio, true
+	}
+
+	if isUselessness {
+		// Uselessness rows always have SurfaceRatio=0
+		return "Uselessness", 0, true
+	}
+
+	return "", 0, false
 }

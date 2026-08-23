@@ -1082,12 +1082,25 @@ func TestCheckout(t *testing.T) {
 func TestRun_AbstractnessIgnoresTestFuncsAsExported(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeGoFile(t, tmpDir, "go.mod", "module example.com/cache\n\ngo 1.24\n")
+	setupCLIDeepCachePackage(t, tmpDir)
+	setupCLICallerPackages(t, tmpDir, 8)
 
+	var stdoutBuf, stderrBuf bytes.Buffer
+	run([]string{"go", "abstractness", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	verifyCLIDeepCacheNotFlagged(t, stdoutBuf)
+}
+
+func setupCLIDeepCachePackage(t *testing.T, tmpDir string) {
 	deepcacheDir := filepath.Join(tmpDir, "deepcache")
 	if err := os.MkdirAll(deepcacheDir, 0755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
+	writeCLIDeepCacheCode(t, deepcacheDir)
+	writeCLIDeepCacheTests(t, deepcacheDir)
+}
 
+func writeCLIDeepCacheCode(t *testing.T, deepcacheDir string) {
 	writeGoFile(t, deepcacheDir, "deepcache.go", `package deepcache
 
 type Cache struct {
@@ -1132,15 +1145,19 @@ func decodeStats(data []byte) *Stats  { return nil }
 func diffStats(s1, s2 *Stats) *Stats  { return nil }
 func mergeStats(s1, s2 *Stats) *Stats { return nil }
 `)
+}
 
+func writeCLIDeepCacheTests(t *testing.T, deepcacheDir string) {
 	var testFuncs strings.Builder
 	testFuncs.WriteString("package deepcache\n\nimport \"testing\"\n\n")
 	for i := 1; i <= 25; i++ {
 		fmt.Fprintf(&testFuncs, "func TestBehavior%d(t *testing.T) {}\n", i)
 	}
 	writeGoFile(t, deepcacheDir, "deepcache_test.go", testFuncs.String())
+}
 
-	for i := 1; i <= 8; i++ {
+func setupCLICallerPackages(t *testing.T, tmpDir string, count int) {
+	for i := 1; i <= count; i++ {
 		callerDir := filepath.Join(tmpDir, fmt.Sprintf("caller%d", i))
 		if err := os.MkdirAll(callerDir, 0755); err != nil {
 			t.Fatalf("MkdirAll failed: %v", err)
@@ -1154,18 +1171,17 @@ func Call%d(cfg deepcache.Config) {
 }
 `, i, i))
 	}
+}
 
-	var stdoutBuf, stderrBuf bytes.Buffer
-	run([]string{"go", "abstractness", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
-
+func verifyCLIDeepCacheNotFlagged(t *testing.T, output bytes.Buffer) {
 	var report struct {
 		Violations []struct {
 			ImportPath   string
 			SurfaceRatio float64
 		}
 	}
-	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
-		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, output.String())
 	}
 
 	for _, v := range report.Violations {

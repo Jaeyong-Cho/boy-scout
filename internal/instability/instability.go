@@ -3,6 +3,7 @@ package instability
 import (
 	"bufio"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -52,6 +53,12 @@ type Edge struct {
 	Target string // import path of the package being imported
 }
 
+// internalEdge is used for intermediate edge computation.
+type internalEdge struct {
+	source string
+	target string
+}
+
 // Graph holds the complete package-import graph for a module.
 type Graph struct {
 	ModuleName string
@@ -75,7 +82,6 @@ func findModuleRoot(path string) (root, moduleName string, err error) {
 		return "", "", fmt.Errorf("failed to resolve path: %w", err)
 	}
 
-	// If path is a file, start from its directory
 	stat, err := os.Stat(absPath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to stat path: %w", err)
@@ -84,41 +90,46 @@ func findModuleRoot(path string) (root, moduleName string, err error) {
 		absPath = filepath.Dir(absPath)
 	}
 
-	// Walk upward looking for go.mod
 	for {
 		gomodPath := filepath.Join(absPath, "go.mod")
 		if _, err := os.Stat(gomodPath); err == nil {
-			// Found go.mod, now read the module name
-			file, err := os.Open(gomodPath)
+			moduleName, err := readModuleName(gomodPath)
 			if err != nil {
-				return "", "", fmt.Errorf("failed to open go.mod: %w", err)
+				return "", "", err
 			}
-			defer file.Close()
-
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if strings.HasPrefix(line, "module ") {
-					parts := strings.Fields(line)
-					if len(parts) >= 2 {
-						moduleName := parts[1]
-						assertf(moduleName != "", "parsed module line is non-empty")
-						return absPath, moduleName, nil
-					}
-				}
-			}
-
-			return "", "", fmt.Errorf("go.mod found but module line not parsed")
+			return absPath, moduleName, nil
 		}
 
-		// Move to parent directory
 		parent := filepath.Dir(absPath)
 		if parent == absPath {
-			// Reached filesystem root
 			return "", "", fmt.Errorf("no go.mod found in path or any parent directory")
 		}
 		absPath = parent
 	}
+}
+
+// readModuleName extracts the module name from go.mod.
+func readModuleName(gomodPath string) (string, error) {
+	file, err := os.Open(gomodPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open go.mod: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "module ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				moduleName := parts[1]
+				assertf(moduleName != "", "parsed module line is non-empty")
+				return moduleName, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("go.mod found but module line not parsed")
 }
 
 // BuildGraph constructs the complete package-import graph for a module.
@@ -130,7 +141,6 @@ func BuildGraph(paths []string, opts Options) (Graph, error) {
 		Skipped:  []SkippedFile{},
 	}
 
-	// Determine module root and module name
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
@@ -143,17 +153,22 @@ func BuildGraph(paths []string, opts Options) (Graph, error) {
 	graph.ModuleName = moduleName
 	graph.Root = root
 
-	// Collect all .go files
 	filesToCheck, _, skipped := srcfiles.Collect(paths, []string{".go"}, opts.ExcludeFiles)
 	graph.Skipped = append(graph.Skipped, skipped...)
 
-	// Parse each file and collect imports, grouping by directory
-	// Map from package import path to set of imports it makes (as strings)
+	packageImports, packageFiles, var_skipped := collectPackageImports(filesToCheck, root, moduleName)
+	graph.Skipped = append(graph.Skipped, var_skipped...)
+
+	buildGraphEdges(&graph, packageImports, packageFiles)
+
+	return graph, nil
+}
+
+// collectPackageImports parses files and groups imports by package.
+func collectPackageImports(filesToCheck []string, root, moduleName string) (map[string]map[string]bool, map[string][]string, []SkippedFile) {
 	packageImports := make(map[string]map[string]bool)
-	// Map from package import path to list of files in that package
 	packageFiles := make(map[string][]string)
-	// Map from directory to package import path
-	dirToPackage := make(map[string]string)
+	var skipped []SkippedFile
 
 	for _, filePath := range filesToCheck {
 		if strings.HasSuffix(filePath, "_test.go") {
@@ -162,123 +177,139 @@ func BuildGraph(paths []string, opts Options) (Graph, error) {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filePath, nil, 0)
 		if err != nil {
-			graph.Skipped = append(graph.Skipped, SkippedFile{File: filePath, Error: err.Error()})
+			skipped = append(skipped, SkippedFile{File: filePath, Error: err.Error()})
 			continue
 		}
 
-		// Determine package directory and its import path
-		dir := filepath.Dir(filePath)
-		absDir, err := filepath.Abs(dir)
-		assertf(err == nil, "filepath.Abs failed for dir %q: %v", dir, err)
-		relDir, err := filepath.Rel(root, absDir)
-		assertf(err == nil, "filepath.Rel failed for root %q dir %q: %v", root, absDir, err)
-		pkgImportPath := moduleName
-		if relDir != "." {
-			pkgImportPath = moduleName + "/" + filepath.ToSlash(relDir)
-		}
-		dirToPackage[dir] = pkgImportPath
-
-		// Initialize package imports map if needed
-		if packageImports[pkgImportPath] == nil {
-			packageImports[pkgImportPath] = make(map[string]bool)
-		}
-
+		pkgImportPath := resolvePackageImportPath(filePath, root, moduleName)
+		ensurePackageImportsMap(packageImports, pkgImportPath)
 		packageFiles[pkgImportPath] = append(packageFiles[pkgImportPath], filePath)
+		recordImports(packageImports, pkgImportPath, file.Imports, moduleName)
+	}
 
-		// Extract imports
-		for _, spec := range file.Imports {
-			importPath := strings.Trim(spec.Path.Value, `"`)
-			// Only count first-party imports (those under the module path)
-			if strings.HasPrefix(importPath, moduleName+"/") || importPath == moduleName {
-				packageImports[pkgImportPath][importPath] = true
-			}
+	return packageImports, packageFiles, skipped
+}
+
+// resolvePackageImportPath computes the import path for a file's package.
+func resolvePackageImportPath(filePath, root, moduleName string) string {
+	dir := filepath.Dir(filePath)
+	absDir, err := filepath.Abs(dir)
+	assertf(err == nil, "filepath.Abs failed for dir %q: %v", dir, err)
+	relDir, err := filepath.Rel(root, absDir)
+	assertf(err == nil, "filepath.Rel failed for root %q dir %q: %v", root, absDir, err)
+	if relDir == "." {
+		return moduleName
+	}
+	return moduleName + "/" + filepath.ToSlash(relDir)
+}
+
+// ensurePackageImportsMap initializes the imports map if needed.
+func ensurePackageImportsMap(packageImports map[string]map[string]bool, pkgImportPath string) {
+	if packageImports[pkgImportPath] == nil {
+		packageImports[pkgImportPath] = make(map[string]bool)
+	}
+}
+
+// recordImports extracts and records first-party imports from file specs.
+func recordImports(packageImports map[string]map[string]bool, pkgImportPath string, specs []*ast.ImportSpec, moduleName string) {
+	for _, spec := range specs {
+		importPath := strings.Trim(spec.Path.Value, `"`)
+		if strings.HasPrefix(importPath, moduleName+"/") || importPath == moduleName {
+			packageImports[pkgImportPath][importPath] = true
 		}
 	}
+}
 
-	// Build edges and compute Ca/Ce
-	type edge struct {
-		source string
-		target string
+// buildGraphEdges computes edges and coupling metrics from package imports.
+func buildGraphEdges(g *Graph, packageImports map[string]map[string]bool, packageFiles map[string][]string) {
+	edgeSet, caferent, cefferent := computeEdgesAndCoupling(packageImports)
+
+	for e := range edgeSet {
+		addPackageStatsForEdge(g, e, caferent, cefferent, packageFiles)
+		g.Edges = append(g.Edges, Edge{Source: e.source, Target: e.target})
 	}
-	edgeSet := make(map[edge]bool)
-	caferent := make(map[string]int) // Ca - afferent coupling
-	cefferent := make(map[string]int) // Ce - efferent coupling
+}
+
+// computeEdgesAndCoupling builds the edge set and computes coupling metrics.
+func computeEdgesAndCoupling(packageImports map[string]map[string]bool) (map[internalEdge]bool, map[string]int, map[string]int) {
+	edgeSet := make(map[internalEdge]bool)
+	caferent := make(map[string]int)
+	cefferent := make(map[string]int)
 
 	for pkg, imports := range packageImports {
 		cefferent[pkg] = len(imports)
 		for importedPkg := range imports {
 			if importedPkg != pkg {
-				edgeSet[edge{pkg, importedPkg}] = true
+				edgeSet[internalEdge{pkg, importedPkg}] = true
 				caferent[importedPkg]++
 			}
 		}
 	}
 
-	// Build the result graph: only include packages that appear in edges
-	for e := range edgeSet {
-		ca := caferent[e.source]
-		ce := cefferent[e.source]
-		assertf(ca+ce > 0, "Ca+Ce > 0 for package in edge")
-		instability := float64(ce) / float64(ca+ce)
+	return edgeSet, caferent, cefferent
+}
 
-		if _, exists := graph.Packages[e.source]; !exists {
-			graph.Packages[e.source] = PackageStats{
-				Ca:          ca,
-				Ce:          ce,
-				Instability: instability,
-				Files:       packageFiles[e.source],
-			}
+// addPackageStatsForEdge adds package stats for both packages involved in an edge.
+func addPackageStatsForEdge(g *Graph, e internalEdge, caferent, cefferent map[string]int, packageFiles map[string][]string) {
+	ca := caferent[e.source]
+	ce := cefferent[e.source]
+	assertf(ca+ce > 0, "Ca+Ce > 0 for package in edge")
+	instability := float64(ce) / float64(ca+ce)
+
+	if _, exists := g.Packages[e.source]; !exists {
+		g.Packages[e.source] = PackageStats{
+			Ca:          ca,
+			Ce:          ce,
+			Instability: instability,
+			Files:       packageFiles[e.source],
 		}
-
-		ca_b := caferent[e.target]
-		ce_b := cefferent[e.target]
-		assertf(ca_b+ce_b > 0, "Ca+Ce > 0 for package in edge")
-		instability_b := float64(ce_b) / float64(ca_b+ce_b)
-
-		if _, exists := graph.Packages[e.target]; !exists {
-			graph.Packages[e.target] = PackageStats{
-				Ca:          ca_b,
-				Ce:          ce_b,
-				Instability: instability_b,
-				Files:       packageFiles[e.target],
-			}
-		}
-
-		graph.Edges = append(graph.Edges, Edge{Source: e.source, Target: e.target})
 	}
 
-	return graph, nil
+	ca_b := caferent[e.target]
+	ce_b := cefferent[e.target]
+	assertf(ca_b+ce_b > 0, "Ca+Ce > 0 for package in edge")
+	instability_b := float64(ce_b) / float64(ca_b+ce_b)
+
+	if _, exists := g.Packages[e.target]; !exists {
+		g.Packages[e.target] = PackageStats{
+			Ca:          ca_b,
+			Ce:          ce_b,
+			Instability: instability_b,
+			Files:       packageFiles[e.target],
+		}
+	}
 }
 
 func Check(paths []string, minGap float64, opts Options) (Report, error) {
 	assertf(minGap >= 0, "minGap must be non-negative, got %f", minGap)
 
-	report := Report{
-		Violations:            []Violation{},
-		Skipped:               []SkippedFile{},
-		TotalEdges:            0,
-		ViolationRate:         0,
-		WeightedViolationRate: 0,
-	}
-
-	// Build the graph
 	graph, err := BuildGraph(paths, opts)
 	if err != nil {
-		return report, err
+		return Report{}, err
 	}
 
-	report.Skipped = graph.Skipped
-	report.TotalEdges = len(graph.Edges)
+	violations, totalGap := computeViolations(graph, minGap)
+	violationRate, weightedViolationRate := computeViolationRates(graph, violations, totalGap)
 
-	// Compute violations
+	return Report{
+		Violations:            violations,
+		Skipped:               graph.Skipped,
+		TotalEdges:            len(graph.Edges),
+		ViolationRate:         violationRate,
+		WeightedViolationRate: weightedViolationRate,
+	}, nil
+}
+
+// computeViolations finds all violations where an edge's gap exceeds minGap.
+func computeViolations(graph Graph, minGap float64) ([]Violation, float64) {
 	violations := []Violation{}
 	totalGap := 0.0
 
 	for _, e := range graph.Edges {
 		source := graph.Packages[e.Source]
 		target := graph.Packages[e.Target]
-
 		gap := target.Instability - source.Instability
+
 		if gap > 0 {
 			totalGap += gap
 		}
@@ -295,21 +326,25 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 		}
 	}
 
-	report.Violations = violations
+	return violations, totalGap
+}
 
-	// Compute violation rates
-	if report.TotalEdges > 0 {
-		violationCount := 0
-		for _, e := range graph.Edges {
-			source := graph.Packages[e.Source]
-			target := graph.Packages[e.Target]
-			if target.Instability > source.Instability {
-				violationCount++
-			}
-		}
-		report.ViolationRate = float64(violationCount) / float64(report.TotalEdges)
-		report.WeightedViolationRate = totalGap / float64(report.TotalEdges)
+// computeViolationRates calculates violation rate metrics.
+func computeViolationRates(graph Graph, violations []Violation, totalGap float64) (float64, float64) {
+	if len(graph.Edges) == 0 {
+		return 0, 0
 	}
 
-	return report, nil
+	violationCount := 0
+	for _, e := range graph.Edges {
+		source := graph.Packages[e.Source]
+		target := graph.Packages[e.Target]
+		if target.Instability > source.Instability {
+			violationCount++
+		}
+	}
+
+	violationRate := float64(violationCount) / float64(len(graph.Edges))
+	weightedViolationRate := totalGap / float64(len(graph.Edges))
+	return violationRate, weightedViolationRate
 }
