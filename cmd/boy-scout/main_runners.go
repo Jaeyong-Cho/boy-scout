@@ -46,7 +46,7 @@ func runGoFunclen(args []string, stdout, stderr io.Writer) int {
 
 func runGoCrap(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("crap", flag.ContinueOnError)
-	threshold := fs.Float64("threshold", 6.0, "CRAP score threshold")
+	threshold := fs.Float64("threshold", 30.0, "CRAP score threshold")
 	format := fs.String("format", "text", "output format: text or json")
 	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
 	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")

@@ -199,3 +199,125 @@ func mustFindViolation(t *testing.T, violations []Violation, funcName string) Vi
 	return Violation{}
 }
 
+func TestCrapDefaultThreshold_BorderlineCaseNotFlaggedAtNewDefault(t *testing.T) {
+	// Complexity 8, coverage 70% => CRAP ≈ 9.7
+	// This test documents the new default behavior (threshold 30.0)
+	// Before the fix: should fail (9.7 > 6.0, violates at old default)
+	// After the fix: should pass (9.7 < 30.0, doesn't violate at new default)
+	writeFixtureModule(t)
+
+	// Write a function with complexity 8 (8 independent if branches)
+	writeFile(t, "main.go", `package main
+func BorderlineFunc(x int) string {
+	if x == 1 { return "a" }
+	if x == 2 { return "b" }
+	if x == 3 { return "c" }
+	if x == 4 { return "d" }
+	if x == 5 { return "e" }
+	if x == 6 { return "f" }
+	if x == 7 { return "g" }
+	if x == 8 { return "h" }
+	return "default"
+}
+`)
+
+	// Write a test file with ~70% coverage (covers x==1 through x==7, misses some branches)
+	writeFile(t, "main_test.go", `package main
+import "testing"
+
+func TestBorderlineFunc(t *testing.T) {
+	cases := []struct {
+		x int
+		want string
+	}{
+		{1, "a"},
+		{2, "b"},
+		{3, "c"},
+		{4, "d"},
+		{5, "e"},
+		{6, "f"},
+		{7, "g"},
+	}
+	for _, tt := range cases {
+		got := BorderlineFunc(tt.x)
+		if got != tt.want {
+			t.Errorf("BorderlineFunc(%d) = %q, want %q", tt.x, got, tt.want)
+		}
+	}
+}
+`)
+
+	// Check with the new default threshold of 30.0
+	// This test will FAIL before the fix (old default 6.0 is used by CLI)
+	// and PASS after the fix (new default 30.0 is used by CLI)
+	report, err := Check([]string{"."}, 30.0, Options{})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// With threshold 30.0, BorderlineFunc (CRAP ≈ 9.7) should NOT violate
+	for _, v := range report.Violations {
+		if v.Func == "BorderlineFunc" {
+			t.Errorf("BorderlineFunc should not violate at threshold 30.0 (score ≈ 9.7), but got violation: %v", v)
+		}
+	}
+}
+
+func TestCrapDefaultThreshold_OldDefaultStillOverridable(t *testing.T) {
+	// Same borderline function with complexity 8, coverage 70% => CRAP ≈ 9.7
+	// When explicitly overridden to 6.0, it should still flag as violation (9.7 > 6.0)
+	writeFixtureModule(t)
+
+	// Same function as above
+	writeFile(t, "main.go", `package main
+func BorderlineFunc(x int) string {
+	if x == 1 { return "a" }
+	if x == 2 { return "b" }
+	if x == 3 { return "c" }
+	if x == 4 { return "d" }
+	if x == 5 { return "e" }
+	if x == 6 { return "f" }
+	if x == 7 { return "g" }
+	if x == 8 { return "h" }
+	return "default"
+}
+`)
+
+	writeFile(t, "main_test.go", `package main
+import "testing"
+
+func TestBorderlineFunc(t *testing.T) {
+	cases := []struct {
+		x int
+		want string
+	}{
+		{1, "a"},
+		{2, "b"},
+		{3, "c"},
+		{4, "d"},
+		{5, "e"},
+		{6, "f"},
+		{7, "g"},
+	}
+	for _, tt := range cases {
+		got := BorderlineFunc(tt.x)
+		if got != tt.want {
+			t.Errorf("BorderlineFunc(%d) = %q, want %q", tt.x, got, tt.want)
+		}
+	}
+}
+`)
+
+	// Check with explicit old default 6.0
+	report, err := Check([]string{"."}, 6.0, Options{})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// With old default 6.0, BorderlineFunc (CRAP ≈ 9.7) SHOULD violate
+	v := mustFindViolation(t, report.Violations, "BorderlineFunc")
+	if v.Score <= 6.0 {
+		t.Errorf("BorderlineFunc should violate at threshold 6.0 (score ≈ 9.7), got score %f", v.Score)
+	}
+}
+
