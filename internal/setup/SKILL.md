@@ -58,9 +58,9 @@ Before editing each violation, read both reference files below: the language-agn
 |---|---|---|---|
 | `funclen` (or `gofunclen` in Go) | `references/funclen.md` | `references/lang/go/funclen.md` | `references/lang/cpp/funclen.md` |
 | `crap` | `references/crap.md` | `references/lang/go/crap.md` | (not yet supported for C++) |
-| `filelen` | `references/filelen.md` | `references/lang/go/filelen.md` | (not yet supported for C++) |
-| `instability` | `references/instability.md` | `references/lang/go/instability.md` | (not yet supported for C++) |
-| `abstractness` | `references/abstractness.md` | `references/lang/go/abstractness.md` | (not yet supported for C++) |
+| `filelen` | `references/filelen.md` | `references/lang/go/filelen.md` | `references/lang/cpp/filelen.md` |
+| `instability` | `references/instability.md` | `references/lang/go/instability.md` | `references/lang/cpp/instability.md` |
+| `abstractness` | `references/abstractness.md` | `references/lang/go/abstractness.md` | `references/lang/cpp/abstractness.md` |
 
 Each "Why/How" file explains the concept and fix strategy generically. Each language-specific file shows a concrete before/after code example in that language's syntax.
 

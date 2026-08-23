@@ -15,4 +15,4 @@ Point the dependency the other way. If `domain` (stable, depended on by everythi
 For a concrete before/after code example in your language:
 
 - **Go:** See `references/lang/go/instability.md`
-- **C++:** Not yet supported for C++
+- **C++:** See `references/lang/cpp/instability.md`
