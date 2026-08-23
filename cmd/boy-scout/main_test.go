@@ -1389,3 +1389,63 @@ func TestRun_CppInstabilityReportsViolations(t *testing.T) {
 		t.Error("Expected TotalEdges > 0")
 	}
 }
+
+// TestRun_CppAbstractnessReportsViolations verifies that the cpp abstractness check
+// works via the CLI and reports violations correctly.
+func TestRun_CppAbstractnessReportsViolations(t *testing.T) {
+	// Get the project root (from cmd/boy-scout test dir, go up 2 levels)
+	cwd, _ := os.Getwd()
+	projectRoot := filepath.Join(cwd, "../..")
+	if abs, err := filepath.Abs(projectRoot); err == nil {
+		projectRoot = abs
+	}
+	fixtureDir := filepath.Join(projectRoot, "testdata", "cpp-abstractness")
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"cpp", "abstractness", "--format=json", fixtureDir}, &stdout, &stderr)
+
+	// Parse JSON output
+	var report struct {
+		Violations []struct {
+			ImportPath   string
+			Abstractness float64
+			Zone         string
+		}
+		TotalPackages int
+	}
+
+	stdoutStr := stdout.String()
+	stderrStr := stderr.String()
+	if stdoutStr == "" {
+		t.Fatalf("No output produced. Exit code: %d, stderr: %s", exitCode, stderrStr)
+	}
+
+	if err := json.Unmarshal([]byte(stdoutStr), &report); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v\nstdout: %s\nstderr: %s", err, stdoutStr, stderrStr)
+	}
+
+	// Expect violations (rigid.h should be Zone of Pain)
+	if len(report.Violations) == 0 {
+		t.Errorf("Expected violations in fixture, got 0")
+	}
+
+	// Check that we have at least one Pain zone violation
+	var hasPain bool
+	var hasAbstractness bool
+	for _, v := range report.Violations {
+		if v.Zone == "Pain" {
+			hasPain = true
+			// Verify Abstractness field is set (should be 0.0 for rigid.h)
+			if v.Abstractness >= 0 {
+				hasAbstractness = true
+			}
+		}
+	}
+
+	if !hasPain {
+		t.Errorf("Expected at least one Pain zone violation, got: %+v", report.Violations)
+	}
+	if !hasAbstractness {
+		t.Errorf("Expected Abstractness field to be set in violations")
+	}
+}

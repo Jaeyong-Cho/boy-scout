@@ -93,6 +93,7 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 		"funclen":       runCppFunclen,
 		"filelen":       runCppFilelen,
 		"instability":   runCppInstability,
+		"abstractness":  runCppAbstractness,
 	},
 }
 

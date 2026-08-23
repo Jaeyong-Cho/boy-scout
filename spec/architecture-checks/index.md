@@ -21,5 +21,6 @@ The first check implemented is instability, which flags packages that are stable
 - [instability](./instability.md)
 - [cpp-instability](./cpp-instability.md)
 - [abstractness](./abstractness.md)
+- [cpp-abstractness](./cpp-abstractness.md)
 - [exclude-test-files-from-dependency-graph](./exclude-test-files-from-dependency-graph.md)
 - [fix-buildgraph-relative-path-mismatch](./fix-buildgraph-relative-path-mismatch.md)

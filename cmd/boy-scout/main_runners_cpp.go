@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"boy-scout/internal/cppabstractness"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/cppinstability"
 	"boy-scout/internal/filelen"
@@ -102,4 +103,35 @@ func runCppInstability(args []string, stdout, stderr io.Writer) int {
 		return renderInstabilityJSON(report, stdout, stderr)
 	}
 	return renderInstabilityText(report, stdout, stderr)
+}
+
+func runCppAbstractness(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("abstractness", flag.ContinueOnError)
+	minDistance := fs.Float64("min-distance", 0.5, "minimum distance from main sequence to report (files with |signedD| > min-distance)")
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "unused (abstractness has no function-level concept)")
+	debug := fs.Bool("debug", false, "unused")
+
+	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	opts := cppabstractness.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        *debug,
+	}
+
+	report, err := cppabstractness.Check(paths, *minDistance, opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+
+	if *format == "json" {
+		return renderAbstractnessJSON(report, stdout, stderr)
+	}
+	return renderAbstractnessText(report, stdout, stderr)
 }
