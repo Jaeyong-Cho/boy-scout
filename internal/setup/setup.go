@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-//go:embed skill.md references/*.md
+//go:embed skill.md references/*
 var skillContent embed.FS
 
 func assertf(cond bool, format string, args ...any) {
@@ -92,33 +92,46 @@ func copyBinary(binaryPath, binPath string) error {
 	return nil
 }
 
-// writeReferenceFiles writes all embedded reference files to skillDir/references/.
+// writeReferenceFiles writes all embedded reference files to skillDir/references/, recursively including subdirectories.
 func writeReferenceFiles(skillDir string) error {
 	refDir := filepath.Join(skillDir, "references")
 	if err := os.MkdirAll(refDir, 0755); err != nil {
 		return fmt.Errorf("failed to create references directory: %w", err)
 	}
 
-	entries, err := skillContent.ReadDir("references")
+	return writeReferenceFilesRecursive("references", refDir)
+}
+
+func writeReferenceFilesRecursive(srcDir, dstDir string) error {
+	entries, err := skillContent.ReadDir(srcDir)
 	if err != nil {
-		return fmt.Errorf("failed to read references directory: %w", err)
+		return fmt.Errorf("failed to read directory %s: %w", srcDir, err)
 	}
 
 	for _, entry := range entries {
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
 		if entry.IsDir() {
-			continue
-		}
+			// Create subdirectory and recurse
+			if err := os.MkdirAll(dstPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", dstPath, err)
+			}
+			if err := writeReferenceFilesRecursive(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// Write file
+			content, err := skillContent.ReadFile(srcPath)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", srcPath, err)
+			}
 
-		content, err := skillContent.ReadFile(filepath.Join("references", entry.Name()))
-		if err != nil {
-			return fmt.Errorf("failed to read reference file %s: %w", entry.Name(), err)
-		}
+			assertNoMachineLocalPath(entry.Name(), content)
 
-		assertNoMachineLocalPath(entry.Name(), content)
-
-		path := filepath.Join(refDir, entry.Name())
-		if err := os.WriteFile(path, content, 0644); err != nil {
-			return fmt.Errorf("failed to write reference file %s: %w", entry.Name(), err)
+			if err := os.WriteFile(dstPath, content, 0644); err != nil {
+				return fmt.Errorf("failed to write file %s: %w", dstPath, err)
+			}
 		}
 	}
 
