@@ -938,3 +938,58 @@ func TestRun_FilelenExitCodeReflectsOutcome(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_SetupWritesReferenceFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "agents"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	// Verify all 5 reference files exist
+	refDir := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references")
+	referenceFiles := []string{"funclen.md", "crap.md", "filelen.md", "instability.md", "abstractness.md"}
+
+	for _, filename := range referenceFiles {
+		path := filepath.Join(refDir, filename)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected reference file %q to exist, got error: %v", filename, err)
+		}
+	}
+
+	// Verify funclen.md contains expected marker
+	funclenPath := filepath.Join(refDir, "funclen.md")
+	funclenContent, err := os.ReadFile(funclenPath)
+	if err != nil {
+		t.Fatalf("failed to read funclen.md: %v", err)
+	}
+	if !strings.Contains(string(funclenContent), "one level of abstraction") {
+		t.Errorf("expected funclen.md to contain 'one level of abstraction', got:\n%s", funclenContent)
+	}
+
+	// Verify abstractness.md contains expected marker
+	abstractnessPath := filepath.Join(refDir, "abstractness.md")
+	abstractnessContent, err := os.ReadFile(abstractnessPath)
+	if err != nil {
+		t.Fatalf("failed to read abstractness.md: %v", err)
+	}
+	if !strings.Contains(string(abstractnessContent), "Zone of Pain") {
+		t.Errorf("expected abstractness.md to contain 'Zone of Pain', got:\n%s", abstractnessContent)
+	}
+}

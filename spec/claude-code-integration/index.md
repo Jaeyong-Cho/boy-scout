@@ -14,3 +14,4 @@ The first Story in this EPIC is the `gardener setup` subcommand, which auto-inst
 - [setup-multi-agent-targets](./setup-multi-agent-targets.md)
 - [tdd-refactor-and-violation-guidance](./tdd-refactor-and-violation-guidance.md)
 - [filelen-violation-guidance](./filelen-violation-guidance.md)
+- [violation-resolve-references](./violation-resolve-references.md)

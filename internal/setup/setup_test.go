@@ -146,8 +146,6 @@ func TestRun_TemplateDeclaresTDDRefactorAndViolationGuidance(t *testing.T) {
 		marker string
 	}{
 		{"BaselineGreenGate", "tests were already failing before any boy-scout edit"},
-		{"FunclenExplainsCleanCodeRule", "one level of abstraction"},
-		{"CrapExplainsCleanCodeRule", "high complexity plus low test coverage"},
 		{"CharacterizationTestForZeroCoverage", "characterization test"},
 		{"AttemptCapIncludesCharacterizationTest", "including its characterization test"},
 	}
@@ -242,9 +240,7 @@ func TestRun_TemplateDeclaresFilelenGuidance(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"FilelenExplainsCleanCodeRule", "mixing multiple concerns"},
-		{"FilelenExplainsCohesionAndCoupling", "loose coupling"},
-		{"FilelenFixedLast", "then filelen violations"},
+		{"FilelenFixedLast", "then filelen, then instability, then abstractness"},
 	}
 
 	for _, c := range cases {
@@ -253,5 +249,156 @@ func TestRun_TemplateDeclaresFilelenGuidance(t *testing.T) {
 				t.Errorf("expected skill template to contain %q, got:\n%s", c.marker, contentStr)
 			}
 		})
+	}
+}
+
+func TestRun_WritesAllReferenceFiles(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
+	referenceFiles := []string{"funclen.md", "crap.md", "filelen.md", "instability.md", "abstractness.md"}
+
+	for _, filename := range referenceFiles {
+		path := filepath.Join(refDir, filename)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected reference file %q to exist, got error: %v", filename, err)
+		}
+	}
+}
+
+func TestRun_ReferenceFilesExplainWhyAndHow(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
+
+	cases := []struct {
+		name      string
+		filename  string
+		whyMarker string
+		howMarker string
+	}{
+		{"Funclen", "funclen.md", "one level of abstraction", "table of contents"},
+		{"Crap", "crap.md", "high complexity plus low test coverage", "characterization test"},
+		{"Filelen", "filelen.md", "mixing multiple concerns", "high cohesion"},
+		{"Instability", "instability.md", "least-stable thing it leans on", "Point the dependency the other way"},
+		{"Abstractness", "abstractness.md", "Zone of Pain", "deep module"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			content, err := os.ReadFile(filepath.Join(refDir, c.filename))
+			if err != nil {
+				t.Fatalf("failed to read %q: %v", c.filename, err)
+			}
+			contentStr := string(content)
+
+			if !strings.Contains(contentStr, c.whyMarker) {
+				t.Errorf("expected %q to contain why marker %q, got:\n%s", c.filename, c.whyMarker, contentStr)
+			}
+			if !strings.Contains(contentStr, c.howMarker) {
+				t.Errorf("expected %q to contain how marker %q, got:\n%s", c.filename, c.howMarker, contentStr)
+			}
+		})
+	}
+}
+
+func TestRun_ReferenceFilesHaveNoMachineLocalPath(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
+	referenceFiles := []string{"funclen.md", "crap.md", "filelen.md", "instability.md", "abstractness.md"}
+
+	for _, filename := range referenceFiles {
+		content, err := os.ReadFile(filepath.Join(refDir, filename))
+		if err != nil {
+			t.Fatalf("failed to read %q: %v", filename, err)
+		}
+		contentStr := string(content)
+
+		if strings.Contains(contentStr, "/Users/") {
+			t.Errorf("expected %q to not contain /Users/, got:\n%s", filename, contentStr)
+		}
+		if strings.Contains(contentStr, "~/workspace") {
+			t.Errorf("expected %q to not contain ~/workspace, got:\n%s", filename, contentStr)
+		}
+	}
+}
+
+func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// Check that all 5 reference files are mentioned in the table
+	referenceFiles := []string{
+		"references/funclen.md",
+		"references/crap.md",
+		"references/filelen.md",
+		"references/instability.md",
+		"references/abstractness.md",
+	}
+
+	for _, refFile := range referenceFiles {
+		if !strings.Contains(contentStr, refFile) {
+			t.Errorf("expected skill template to contain reference to %q, got:\n%s", refFile, contentStr)
+		}
+	}
+
+	// Check fix-order statement
+	if !strings.Contains(contentStr, "then filelen, then instability, then abstractness") {
+		t.Errorf("expected skill template to contain fix-order statement with all 5 kinds, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_TemplateNoLongerInlinesViolationExplanations(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// These specific inline explanation bullets should NOT appear in skill.md anymore
+	// (they should only appear in reference files)
+	forbiddenMarkers := []string{
+		"**gofunclen violation:**",
+		"**crap violation:**",
+		"**filelen violation:**",
+	}
+
+	for _, marker := range forbiddenMarkers {
+		if strings.Contains(contentStr, marker) {
+			t.Errorf("expected skill template to no longer contain inline violation explanation %q, got:\n%s", marker, contentStr)
+		}
 	}
 }

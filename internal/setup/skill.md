@@ -12,11 +12,19 @@ Auto-fix code quality violations from the boy-scout lint checker.
 
 **Before starting, check the tests are green:** run `go test ./...` once, before touching anything. If it fails, stop immediately and report that tests were already failing before any boy-scout edit — fix the test suite first, then re-run this skill. Never refactor on top of a red suite; you can't tell your edit from pre-existing breakage.
 
-Run `boy-scout go all` to find violations. For C++ codebases, run `boy-scout cpp funclen` instead (C++ has no CRAP check and no `boy-scout:ignore` comment support yet). For each violation, edit the flagged function or file (gofunclen violations first, then crap violations, then filelen violations — file-level reorganization goes last, since splitting a file shifts every other violation's line number in it). Before editing, state in plain terms which clean-code rule it breaks:
+Run `boy-scout go all` to find violations. For C++ codebases, run `boy-scout cpp funclen` instead (C++ has no CRAP check and no `boy-scout:ignore` comment support yet). For each violation, edit the flagged function or file in this order: funclen violations first, then crap, then filelen, then instability, then abstractness. The more disruptive the fix, the later it runs — file-level reorganization doesn't invalidate line numbers of unresolved violations yet to come, but package-boundary reshapes do, so instability and abstractness go last.
 
-- **gofunclen violation:** the function is too big to hold one level of abstraction — it's doing more than one thing. Fix it by extracting the sub-steps into well-named helper functions, not by just trimming lines.
-- **crap violation:** the function combines high complexity plus low test coverage — nobody can prove a change to it is safe. Fix it by simplifying the logic, backed by a real test.
-- **filelen violation:** the file has grown too big to hold one responsibility — it's mixing multiple concerns. Fix it by splitting into separate files along natural seams, each with high cohesion (one clear job) and loose coupling (minimal knowledge of the others' internals).
+Before editing each violation, read the corresponding reference file below. Each file has two sections: why it's a problem, and how to fix it. Both sections are concrete and specific to that violation kind — read both before starting to edit.
+
+| Violation kind | Reference file |
+|---|---|
+| `funclen` (or `gofunclen` in Go) | `references/funclen.md` |
+| `crap` | `references/crap.md` |
+| `filelen` | `references/filelen.md` |
+| `instability` | `references/instability.md` |
+| `abstractness` | `references/abstractness.md` |
+
+Note: Go's boy-scout uses the token `gofunclen` for the CLI subcommand, and C++'s uses `funclen`; both violations are explained in `references/funclen.md`.
 
 For a crap violation, check the coverage percentage already printed in the violation line. If it's 0%, first add one minimal characterization test — a test that pins down what the function does right now, not what it should do — and confirm it passes, before refactoring. If coverage is already above 0%, skip straight to refactoring; the existing tests plus the re-run-after-edit step below are enough of a safety net.
 
