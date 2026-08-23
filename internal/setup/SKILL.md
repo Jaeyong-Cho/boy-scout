@@ -48,11 +48,11 @@ For mixed-language projects, merge all violations from each language into a sing
 
 ## Processing Violations
 
-For each violation, edit the flagged function or file in this order: funclen violations first, then same-package duplication clusters, then crap, then filelen, then instability, then abstractness, then cross-package duplication clusters last. The more disruptive the fix, the later it runs — same-package duplication clusters are local extractions (cheap), file-level reorganization doesn't invalidate line numbers of unresolved violations yet to come, but package-boundary reshapes (including cross-package duplication clusters) do, so instability, abstractness, and cross-package clusters go last.
+Fix violations in order of disruption (least to most): funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication.
 
-**Fix one violation per violation-type per run.** Within each kind, identify the worst violation first: rank by the severity number boy-scout already prints — for funclen and filelen, lines minus the limit; for crap, the CRAP score; for duplication, the summed `DupLines` (lines resolved by fixing this cluster); for instability, the Gap; for abstractness, the Distance — highest number first. Fix one violation from each kind, in the order above (funclen first, then same-package duplication, then crap, etc.). Violations in test files (`*_test.go` in Go, test files in C++) are deferred to the end of the list, after every non-test violation. For example: if you have 2 funclen violations, 1 crap violation, and 1 filelen violation, you can fix the worst funclen + the crap + the filelen = 3 violations in one run (one per kind). If a violation, including its characterization test if one was needed, fails to fix after 3 attempts total, mark it unresolved and move to the next kind. At the end, report fixed vs. unresolved violations by kind — distinct from unresolved (attempted, failed 3 times).
+**Within each type, fix one violation per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), CRAP score (crap), summed DupLines (duplication), Gap (instability), Distance (abstractness). Test file violations (`*_test.go`, C++ tests) go last. If a fix fails, mark unresolved and move to the next type.
 
-Before editing each violation, read both reference files below: the language-agnostic explanation and your language's concrete example.
+Before editing, read: language-agnostic reference (`references/{violation-type}.md`) and language-specific example (`references/lang/{go|cpp}/{violation-type}.md`).
 
 | Violation kind | Why/How | Go Example | C++ Example |
 |---|---|---|---|

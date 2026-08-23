@@ -240,7 +240,7 @@ func TestRun_TemplateDeclaresFilelenGuidance(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"FilelenFixedLast", "then filelen, then instability, then abstractness"},
+		{"FilelenFixedLast", "filelen, instability, abstractness, cross-package duplication"},
 	}
 
 	for _, c := range cases {
@@ -369,8 +369,8 @@ func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
 	}
 
 	// Check fix-order statement
-	if !strings.Contains(contentStr, "then filelen, then instability, then abstractness") {
-		t.Errorf("expected skill template to contain fix-order statement with all 5 kinds, got:\n%s", contentStr)
+	if !strings.Contains(contentStr, "funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication") {
+		t.Errorf("expected skill template to contain fix-order statement with all violation kinds, got:\n%s", contentStr)
 	}
 }
 
@@ -421,10 +421,10 @@ func TestRun_TemplateDeclaresFixCapAndPriority(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"CapPerType", "Fix one violation per violation-type per run"},
-		{"SeverityWorstFirst", "highest number first"},
-		{"TestFilesDeferredLast", "deferred to the end of the list"},
-		{"ExampleMultipleViolationTypes", "one per kind"},
+		{"CapPerType", "Within each type, fix one violation per run"},
+		{"SeverityWorstFirst", "boy-scout's severity"},
+		{"TestFilesDeferredLast", "go last"},
+		{"ExampleMultipleViolationTypes", "mark unresolved and move to the next type"},
 	}
 
 	for _, c := range cases {
@@ -578,13 +578,8 @@ func TestRun_TemplateOrdersDuplicationBySamePackageVsCrossPackage(t *testing.T) 
 	contentStr := string(content)
 
 	// Check that same-package duplication clusters are mentioned in early tier with funclen
-	if !strings.Contains(contentStr, "funclen violations first, then same-package duplication clusters") {
-		t.Errorf("expected skill template to mention same-package duplication clusters after funclen, got:\n%s", contentStr)
-	}
-
-	// Check that cross-package duplication clusters are mentioned in late tier after abstractness
-	if !strings.Contains(contentStr, "then cross-package duplication clusters last") {
-		t.Errorf("expected skill template to mention cross-package duplication clusters last, got:\n%s", contentStr)
+	if !strings.Contains(contentStr, "funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication") {
+		t.Errorf("expected skill template to mention violation fix order with same-package before cross-package duplication, got:\n%s", contentStr)
 	}
 }
 
@@ -603,7 +598,7 @@ func TestRun_TemplateStatesClusterCountsAsOnePerType(t *testing.T) {
 	contentStr := string(content)
 
 	// Check that the cap paragraph states one violation per type per run
-	if !strings.Contains(contentStr, "Fix one violation per violation-type per run") {
+	if !strings.Contains(contentStr, "Within each type, fix one violation per run") {
 		t.Errorf("expected skill template to state one violation per type per run, got:\n%s", contentStr)
 	}
 }
