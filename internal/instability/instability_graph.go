@@ -182,17 +182,17 @@ func recordImports(packageImports map[string]map[string]bool, pkgImportPath stri
 
 // buildGraphEdges computes edges and coupling metrics from package imports.
 func buildGraphEdges(g *Graph, packageImports map[string]map[string]bool, packageFiles map[string][]string) {
-	edgeSet, caferent, cefferent := computeEdgesAndCoupling(packageImports)
+	edges, caferent, cefferent := ComputeEdgesAndCoupling(packageImports)
 
-	for e := range edgeSet {
-		addPackageStatsForEdge(g, e, caferent, cefferent, packageFiles)
-		g.Edges = append(g.Edges, Edge{Source: e.source, Target: e.target})
+	for _, e := range edges {
+		AddPackageStatsForEdge(g, e, caferent, cefferent, packageFiles)
+		g.Edges = append(g.Edges, e)
 	}
 }
 
-// computeEdgesAndCoupling builds the edge set and computes coupling metrics.
-func computeEdgesAndCoupling(packageImports map[string]map[string]bool) (map[internalEdge]bool, map[string]int, map[string]int) {
-	edgeSet := make(map[internalEdge]bool)
+// ComputeEdgesAndCoupling builds the edge slice and computes coupling metrics.
+func ComputeEdgesAndCoupling(packageImports map[string]map[string]bool) ([]Edge, map[string]int, map[string]int) {
+	var edges []Edge
 	caferent := make(map[string]int)
 	cefferent := make(map[string]int)
 
@@ -200,42 +200,42 @@ func computeEdgesAndCoupling(packageImports map[string]map[string]bool) (map[int
 		cefferent[pkg] = len(imports)
 		for importedPkg := range imports {
 			if importedPkg != pkg {
-				edgeSet[internalEdge{pkg, importedPkg}] = true
+				edges = append(edges, Edge{Source: pkg, Target: importedPkg})
 				caferent[importedPkg]++
 			}
 		}
 	}
 
-	return edgeSet, caferent, cefferent
+	return edges, caferent, cefferent
 }
 
-// addPackageStatsForEdge adds package stats for both packages involved in an edge.
-func addPackageStatsForEdge(g *Graph, e internalEdge, caferent, cefferent map[string]int, packageFiles map[string][]string) {
-	ca := caferent[e.source]
-	ce := cefferent[e.source]
+// AddPackageStatsForEdge adds package stats for both packages involved in an edge.
+func AddPackageStatsForEdge(g *Graph, e Edge, caferent, cefferent map[string]int, packageFiles map[string][]string) {
+	ca := caferent[e.Source]
+	ce := cefferent[e.Source]
 	assertf_graph(ca+ce > 0, "Ca+Ce > 0 for package in edge")
 	instability := float64(ce) / float64(ca+ce)
 
-	if _, exists := g.Packages[e.source]; !exists {
-		g.Packages[e.source] = PackageStats{
+	if _, exists := g.Packages[e.Source]; !exists {
+		g.Packages[e.Source] = PackageStats{
 			Ca:          ca,
 			Ce:          ce,
 			Instability: instability,
-			Files:       packageFiles[e.source],
+			Files:       packageFiles[e.Source],
 		}
 	}
 
-	ca_b := caferent[e.target]
-	ce_b := cefferent[e.target]
+	ca_b := caferent[e.Target]
+	ce_b := cefferent[e.Target]
 	assertf_graph(ca_b+ce_b > 0, "Ca+Ce > 0 for package in edge")
 	instability_b := float64(ce_b) / float64(ca_b+ce_b)
 
-	if _, exists := g.Packages[e.target]; !exists {
-		g.Packages[e.target] = PackageStats{
+	if _, exists := g.Packages[e.Target]; !exists {
+		g.Packages[e.Target] = PackageStats{
 			Ca:          ca_b,
 			Ce:          ce_b,
 			Instability: instability_b,
-			Files:       packageFiles[e.target],
+			Files:       packageFiles[e.Target],
 		}
 	}
 }

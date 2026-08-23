@@ -75,8 +75,8 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 		return Report{}, err
 	}
 
-	violations, totalGap := computeViolations(graph, minGap)
-	violationRate, weightedViolationRate := computeViolationRates(graph, violations, totalGap)
+	violations, totalGap := ComputeViolations(graph, minGap)
+	violationRate, weightedViolationRate := ComputeViolationRates(graph, violations, totalGap)
 
 	return Report{
 		Violations:            violations,
@@ -87,8 +87,8 @@ func Check(paths []string, minGap float64, opts Options) (Report, error) {
 	}, nil
 }
 
-// computeViolations finds all violations where an edge's gap exceeds minGap.
-func computeViolations(graph Graph, minGap float64) ([]Violation, float64) {
+// ComputeViolations finds all violations where an edge's gap exceeds minGap.
+func ComputeViolations(graph Graph, minGap float64) ([]Violation, float64) {
 	violations := []Violation{}
 	totalGap := 0.0
 
@@ -116,8 +116,8 @@ func computeViolations(graph Graph, minGap float64) ([]Violation, float64) {
 	return violations, totalGap
 }
 
-// computeViolationRates calculates violation rate metrics.
-func computeViolationRates(graph Graph, violations []Violation, totalGap float64) (float64, float64) {
+// ComputeViolationRates calculates violation rate metrics.
+func ComputeViolationRates(graph Graph, violations []Violation, totalGap float64) (float64, float64) {
 	if len(graph.Edges) == 0 {
 		return 0, 0
 	}

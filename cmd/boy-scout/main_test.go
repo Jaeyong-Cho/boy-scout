@@ -1341,3 +1341,51 @@ func TestRun_VersionPrintsBuiltVersion(t *testing.T) {
 		t.Errorf("expected output %q, got %q", expectedOutput, stdout.String())
 	}
 }
+
+// TestRun_CppInstabilityReportsViolations verifies that the cpp instability check
+// works via the CLI and reports violations correctly.
+func TestRun_CppInstabilityReportsViolations(t *testing.T) {
+	// Get the project root (from cmd/boy-scout test dir, go up 2 levels)
+	cwd, _ := os.Getwd()
+	projectRoot := filepath.Join(cwd, "../..")
+	if abs, err := filepath.Abs(projectRoot); err == nil {
+		projectRoot = abs
+	}
+	fixtureDir := filepath.Join(projectRoot, "testdata", "cpp-instability")
+
+	// First run: no violations (original fixture)
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"cpp", "instability", "--format=json", fixtureDir}, &stdout, &stderr)
+
+	// Parse JSON output
+	var report struct {
+		Violations []struct {
+			Source string
+			Target string
+			Gap    float64
+		}
+		TotalEdges int
+	}
+
+	stdoutStr := stdout.String()
+	stderrStr := stderr.String()
+	if stdoutStr == "" {
+		t.Fatalf("No output produced. Exit code: %d, stderr: %s", exitCode, stderrStr)
+	}
+
+	if err := json.Unmarshal([]byte(stdoutStr), &report); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v\nstdout: %s\nstderr: %s", err, stdoutStr, stderrStr)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("Expected 0 violations in original fixture, got %d", len(report.Violations))
+	}
+	if exitCode != 0 {
+		t.Errorf("Expected exit code 0 (no violations), got %d", exitCode)
+	}
+
+	// Verify TotalEdges is > 0 (confirms the check ran)
+	if report.TotalEdges == 0 {
+		t.Error("Expected TotalEdges > 0")
+	}
+}

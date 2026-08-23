@@ -80,6 +80,8 @@ At the end of the run, report the count of fixed vs. unresolved violations:
 - If boy-scout finds zero violations, report clean and make no edits.
 - If violations were fixed, show a summary: how many fixed, how many unresolved, how many skipped by the 5-per-run cap.
 
+**Check first**: the consistency of naming of source file, function, variables and documents.
+
 **Commit your changes:** Ask the user to confirm they want to commit the fixes:
 
 ```
