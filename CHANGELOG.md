@@ -2,6 +2,7 @@
 
 
 
+
 # Changelog
 
 All notable changes to boy-scout will be documented in this file.
