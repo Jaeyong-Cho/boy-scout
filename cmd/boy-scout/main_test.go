@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"boy-scout/internal/tsfunclen"
 )
 
 // cppFuncLenFillerLines returns n valid, uniquely-named C++ declaration
@@ -1447,5 +1449,126 @@ func TestRun_CppAbstractnessReportsViolations(t *testing.T) {
 	}
 	if !hasAbstractness {
 		t.Errorf("Expected Abstractness field to be set in violations")
+	}
+}
+
+// Characterization test for runTsFilelen
+func TestRun_TsFilelenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a short TypeScript file
+	shortFile := filepath.Join(tmpDir, "short.ts")
+	if err := os.WriteFile(shortFile, []byte("function foo() { return 1; }"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a long TypeScript file (310 lines, exceeding limit of 300)
+	lines := []string{"function bar() {"}
+	for i := 0; i < 308; i++ {
+		lines = append(lines, fmt.Sprintf("  let x%d = %d;", i, i))
+	}
+	lines = append(lines, "}")
+	longFile := filepath.Join(tmpDir, "long.ts")
+	if err := os.WriteFile(longFile, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"ts", "filelen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long file as violation
+	if !strings.Contains(output, "long.ts") {
+		t.Errorf("expected output to contain 'long.ts', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "310 lines") {
+		t.Errorf("expected output to contain '310 lines', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+// Characterization test for runTsFunclen
+func TestRun_TsFunclenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a TypeScript file with a short function (under limit)
+	shortFunc := filepath.Join(tmpDir, "short.ts")
+	shortSrc := `function shortFunc() {
+  return 1;
+}`
+	if err := os.WriteFile(shortFunc, []byte(shortSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a TypeScript file with a long function (exceeding 50 lines)
+	longFuncLines := []string{"function longFunc() {"}
+	for i := 0; i < 52; i++ {
+		longFuncLines = append(longFuncLines, fmt.Sprintf("  let x%d = %d;", i, i))
+	}
+	longFuncLines = append(longFuncLines, "}")
+
+	longFunc := filepath.Join(tmpDir, "long.ts")
+	if err := os.WriteFile(longFunc, []byte(strings.Join(longFuncLines, "\n")), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"ts", "funclen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long function as violation
+	if !strings.Contains(output, "longFunc") {
+		t.Errorf("expected output to contain 'longFunc', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "54 lines") {
+		t.Errorf("expected output to contain '54 lines' (54 lines including braces), got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+// Characterization test for writeTsFunclenLines
+func TestWriteTsFunclenLines_CharacterizationTest(t *testing.T) {
+	var buf bytes.Buffer
+
+	report := tsfunclen.Report{
+		Violations: []tsfunclen.Violation{
+			{
+				File:   "test.ts",
+				Line:   10,
+				Func:   "testFunc",
+				Length: 55,
+				Limit:  50,
+			},
+		},
+		ExcludedFuncs: []tsfunclen.ExcludedFunc{
+			{
+				File:   "test.ts",
+				Func:   "excludedFunc",
+				Reason: "matched pattern: *_helper",
+			},
+		},
+	}
+
+	writeTsFunclenLines(&buf, "", report)
+	output := buf.String()
+
+	// Verify violations line format
+	if !strings.Contains(output, "test.ts:10: function testFunc is 55 lines (limit 50)") {
+		t.Errorf("expected violation line format not found, got: %q", output)
+	}
+
+	// Verify excluded line format
+	if !strings.Contains(output, "test.ts: function excludedFunc excluded (matched pattern: *_helper)") {
+		t.Errorf("expected excluded line format not found, got: %q", output)
 	}
 }
