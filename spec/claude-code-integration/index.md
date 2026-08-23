@@ -15,3 +15,4 @@ The first Story in this EPIC is the `gardener setup` subcommand, which auto-inst
 - [tdd-refactor-and-violation-guidance](./tdd-refactor-and-violation-guidance.md)
 - [filelen-violation-guidance](./filelen-violation-guidance.md)
 - [violation-resolve-references](./violation-resolve-references.md)
+- [fix-run-cap-and-priority](./fix-run-cap-and-priority.md)

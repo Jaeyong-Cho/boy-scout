@@ -402,3 +402,36 @@ func TestRun_TemplateNoLongerInlinesViolationExplanations(t *testing.T) {
 		}
 	}
 }
+
+func TestRun_TemplateDeclaresFixCapAndPriority(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	cases := []struct {
+		name   string
+		marker string
+	}{
+		{"CapAtFive", "Cap each run at 5 violations"},
+		{"SeverityWorstFirst", "highest number first"},
+		{"TestFilesDeferredLast", "deferred to the end of the list"},
+		{"CapSkippedDistinctFromUnresolved", "skipped by the cap"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if !strings.Contains(contentStr, c.marker) {
+				t.Errorf("expected skill template to contain %q, got:\n%s", c.marker, contentStr)
+			}
+		})
+	}
+}

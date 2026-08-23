@@ -993,3 +993,49 @@ func TestRun_SetupWritesReferenceFiles(t *testing.T) {
 		t.Errorf("expected abstractness.md to contain 'Zone of Pain', got:\n%s", abstractnessContent)
 	}
 }
+
+func TestRun_SetupWritesCapAndPriorityGuidance(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"setup", "agents"}, &stdoutBuf, &stderrBuf)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
+	}
+
+	// Read the skill file
+	skillPath := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "SKILL.md")
+	skillContent, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	skillStr := string(skillContent)
+
+	// Verify all 4 markers from the cap-and-priority guidance are present
+	markers := []string{
+		"Cap each run at 5 violations",
+		"highest number first",
+		"deferred to the end of the list",
+		"skipped by the cap",
+	}
+
+	for _, marker := range markers {
+		if !strings.Contains(skillStr, marker) {
+			t.Errorf("expected skill file to contain %q, got:\n%s", marker, skillStr)
+		}
+	}
+}

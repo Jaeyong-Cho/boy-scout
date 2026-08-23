@@ -14,6 +14,8 @@ Auto-fix code quality violations from the boy-scout lint checker.
 
 Run `boy-scout go all` to find violations. For C++ codebases, run `boy-scout cpp funclen` instead (C++ has no CRAP check and no `boy-scout:ignore` comment support yet). For each violation, edit the flagged function or file in this order: funclen violations first, then crap, then filelen, then instability, then abstractness. The more disruptive the fix, the later it runs — file-level reorganization doesn't invalidate line numbers of unresolved violations yet to come, but package-boundary reshapes do, so instability and abstractness go last.
 
+**Cap each run at 5 violations.** Within each kind above, process the worst violations first: rank by the severity number `boy-scout go all` already prints — for funclen/gofunclen and filelen, lines minus the limit; for crap, the CRAP score; for instability, the Gap; for abstractness, the Distance — highest number first. Regardless of kind or severity, violations in test files (`*_test.go`) are deferred to the end of the list, after every non-test violation. Stop once 5 violations total have been processed (fixed or marked unresolved) this run, including any characterization test step — same accounting as the existing 3-attempts-per-violation cap. At the end, report fixed vs. unresolved as before, plus how many remaining violations were skipped by the cap (never attempted) — distinct from unresolved (attempted, failed 3 times).
+
 Before editing each violation, read the corresponding reference file below. Each file has two sections: why it's a problem, and how to fix it. Both sections are concrete and specific to that violation kind — read both before starting to edit.
 
 | Violation kind | Reference file |
