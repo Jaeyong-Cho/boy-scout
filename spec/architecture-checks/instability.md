@@ -40,7 +40,7 @@ For every import edge `A -> B` (A imports B) between two first-party packages:
 - `--exclude-file` (comma-separated globs): skip files matching patterns (same as other checks)
 - `--exclude-func` (unused, present for consistency with other checks)
 - Default path `.` if none given
-- Skips files that fail to parse with a warning, continues checking the rest
+- Skips files that fail to parse (syntax errors anywhere in the file, not just the import block) with a warning, continues checking the rest
 - Reports exit code 0 if clean, 1 if violations found, 2 if any file was skipped (takes priority)
 
 ### Report structure

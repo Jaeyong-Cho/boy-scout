@@ -1060,3 +1060,61 @@ func Call%d(cfg deepcache.Config) {
 		}
 	}
 }
+
+// TestRun_InstabilitySkipsFileWithBrokenBody is a full-CLI-pipeline integration test
+// for the full-AST-mode fix. Given a module with a file that has a valid
+// package/import header but a syntax error in the function body, the file must
+// be skipped and its imports must not be counted in the dependency graph.
+// Given: pkg/helper/helper.go and pkg/broken/broken.go with broken function syntax
+// When: `boy-scout go instability --format=json` runs
+// Then: Skipped contains broken.go, TotalEdges == 0, exit code == 2
+func TestRun_InstabilitySkipsFileWithBrokenBody(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeGoFile(t, tmpDir, "go.mod", "module bodybug\n\ngo 1.24\n")
+
+	helperDir := filepath.Join(tmpDir, "pkg", "helper")
+	brokenDir := filepath.Join(tmpDir, "pkg", "broken")
+	for _, d := range []string{helperDir, brokenDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatalf("MkdirAll(%s) failed: %v", d, err)
+		}
+	}
+
+	writeGoFile(t, helperDir, "helper.go", `package helper
+
+func Do() {}
+`)
+	writeGoFile(t, brokenDir, "broken.go", `package broken
+
+import "bodybug/pkg/helper"
+
+func Bad( {
+	helper.Do()
+}
+`)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "instability", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	var report struct {
+		Skipped   []struct{ File string }
+		TotalEdges int
+	}
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
+	}
+
+	if len(report.Skipped) != 1 {
+		t.Errorf("expected 1 skipped file, got %d: %v", len(report.Skipped), report.Skipped)
+	} else if !strings.HasSuffix(report.Skipped[0].File, "broken.go") {
+		t.Errorf("expected skipped file to end in broken.go, got %s", report.Skipped[0].File)
+	}
+
+	if report.TotalEdges != 0 {
+		t.Errorf("expected TotalEdges=0 (broken.go skipped, no edges), got %d", report.TotalEdges)
+	}
+
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2 (skipped file priority), got %d", exitCode)
+	}
+}

@@ -486,3 +486,67 @@ func TestCheck_MinGapFiltersListNotSummary(t *testing.T) {
 		t.Fatalf("expected same WeightedViolationRate in both runs, got %f vs %f", report1.WeightedViolationRate, report2.WeightedViolationRate)
 	}
 }
+
+// TestBuildGraph_SkipsFileWithBrokenBody tests that a file with a syntax error
+// in its function body (not just import block) is correctly skipped and its imports
+// are not counted in the graph.
+func TestBuildGraph_SkipsFileWithBrokenBody(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Write go.mod
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module bodybug\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create helper package
+	helperDir := filepath.Join(tempDir, "pkg", "helper")
+	os.MkdirAll(helperDir, 0755)
+	if err := os.WriteFile(filepath.Join(helperDir, "helper.go"), []byte("package helper\n\nfunc Do() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write helper.go: %v", err)
+	}
+
+	// Create broken package: valid package/import header, but syntax error in function body
+	brokenDir := filepath.Join(tempDir, "pkg", "broken")
+	os.MkdirAll(brokenDir, 0755)
+	brokenCode := `package broken
+
+import "bodybug/pkg/helper"
+
+func Bad( {
+	helper.Do()
+}
+`
+	if err := os.WriteFile(filepath.Join(brokenDir, "broken.go"), []byte(brokenCode), 0644); err != nil {
+		t.Fatalf("failed to write broken.go: %v", err)
+	}
+
+	graph, err := BuildGraph([]string{tempDir}, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify: broken.go is in Skipped
+	if len(graph.Skipped) != 1 {
+		t.Fatalf("expected 1 skipped file, got %d: %v", len(graph.Skipped), graph.Skipped)
+	}
+	if !filepath.IsAbs(graph.Skipped[0].File) || filepath.Base(graph.Skipped[0].File) != "broken.go" {
+		t.Fatalf("expected skipped file to be broken.go, got %s", filepath.Base(graph.Skipped[0].File))
+	}
+	if graph.Skipped[0].Error == "" {
+		t.Fatal("expected skipped file to have an error message")
+	}
+
+	// Verify: no edge from broken to helper exists
+	for _, edge := range graph.Edges {
+		if edge.Source == "bodybug/pkg/broken" && edge.Target == "bodybug/pkg/helper" {
+			t.Fatal("expected no edge from broken to helper (broken.go should be skipped)")
+		}
+	}
+
+	// Verify: broken package should not appear as a source in the graph
+	for _, edge := range graph.Edges {
+		if edge.Source == "bodybug/pkg/broken" {
+			t.Fatalf("unexpected edge from broken package: %s -> %s", edge.Source, edge.Target)
+		}
+	}
+}

@@ -160,7 +160,7 @@ func BuildGraph(paths []string, opts Options) (Graph, error) {
 			continue
 		}
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filePath, nil, parser.ImportsOnly)
+		file, err := parser.ParseFile(fset, filePath, nil, 0)
 		if err != nil {
 			graph.Skipped = append(graph.Skipped, SkippedFile{File: filePath, Error: err.Error()})
 			continue
