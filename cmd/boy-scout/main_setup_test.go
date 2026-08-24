@@ -681,7 +681,7 @@ func TestRun_FilelenRespectsMaxLinesFlag(t *testing.T) {
 	// Create a file with 60 lines
 	lines := []string{"package main"}
 	for i := 0; i < 59; i++ {
-		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+		lines = append(lines, fmt.Sprintf("var x%d = %d", i, i))
 	}
 	src := strings.Join(lines, "\n")
 
@@ -706,11 +706,44 @@ func TestRun_FilelenRespectsMaxLinesFlag(t *testing.T) {
 	}
 }
 
+func TestRun_FilelenCountsLoCNotPhysicalLines(t *testing.T) {
+	// Create a file with 320 physical lines but only 41 LoC
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "bigcomments.go")
+
+	content := "package main\n"
+	for i := 0; i < 40; i++ {
+		content += fmt.Sprintf("var x%d = %d\n", i, i)
+	}
+	// Add 279 blank lines to reach 320 total physical lines
+	for i := 0; i < 279; i++ {
+		content += "\n"
+	}
+
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "filelen", tmpFile}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Should not report a violation since LoC (41) is well under limit (300)
+	if strings.Contains(output, filepath.Base(tmpFile)) {
+		t.Errorf("expected no output for file with 320 physical / 41 LoC, got:\n%s", output)
+	}
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+}
+
 func TestRun_FilelenTextFormatMatchesExpectedLine(t *testing.T) {
 	// Create a file with 350 lines (over default limit of 300)
 	lines := []string{"package main"}
 	for i := 0; i < 349; i++ {
-		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+		lines = append(lines, fmt.Sprintf("var x%d = %d", i, i))
 	}
 	src := strings.Join(lines, "\n")
 
@@ -739,7 +772,7 @@ func TestRun_FilelenJSONFormatOutputsValidSchema(t *testing.T) {
 	// Create a file with 350 lines
 	lines := []string{"package main"}
 	for i := 0; i < 349; i++ {
-		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+		lines = append(lines, fmt.Sprintf("var x%d = %d", i, i))
 	}
 	src := strings.Join(lines, "\n")
 
@@ -776,7 +809,7 @@ func TestRun_CppFilelenOnlyScansCppExtensions(t *testing.T) {
 	// Create a .go file with 350 lines (should be ignored for cpp filelen)
 	goLines := []string{"package main"}
 	for i := 0; i < 349; i++ {
-		goLines = append(goLines, "// line "+fmt.Sprintf("%d", i+1))
+		goLines = append(goLines, fmt.Sprintf("var x%d = %d", i, i))
 	}
 	goFile := filepath.Join(tmpDir, "big.go")
 	if err := os.WriteFile(goFile, []byte(strings.Join(goLines, "\n")), 0644); err != nil {
@@ -786,7 +819,7 @@ func TestRun_CppFilelenOnlyScansCppExtensions(t *testing.T) {
 	// Create a .cpp file with 350 lines (should be reported for cpp filelen)
 	cppLines := []string{"#include <iostream>"}
 	for i := 0; i < 349; i++ {
-		cppLines = append(cppLines, "// line "+fmt.Sprintf("%d", i+1))
+		cppLines = append(cppLines, fmt.Sprintf("int x%d = %d;", i, i))
 	}
 	cppFile := filepath.Join(tmpDir, "big.cpp")
 	if err := os.WriteFile(cppFile, []byte(strings.Join(cppLines, "\n")), 0644); err != nil {
@@ -862,7 +895,7 @@ func TestRun_AllIncludesFilelenJSON(t *testing.T) {
 
 	lines := []string{"package main"}
 	for i := 0; i < 349; i++ {
-		lines = append(lines, "// line "+fmt.Sprintf("%d", i+1))
+		lines = append(lines, fmt.Sprintf("var x%d = %d", i, i))
 	}
 	src := strings.Join(lines, "\n")
 
@@ -915,7 +948,7 @@ func TestRun_FilelenExitCodeReflectsOutcome(t *testing.T) {
 		},
 		{
 			name:         "file with violations",
-			content:      "package main\n" + strings.Repeat("// line\n", 301),
+			content:      "package main\n" + strings.Repeat("var x = 1\n", 301),
 			maxLines:     300,
 			expectedCode: 1,
 		},

@@ -34,7 +34,7 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// lineSrc generates source code with exactly n lines, each being "// line N".
+// lineSrc generates source code with exactly n lines, each being real code "var xN = N".
 // The result contains n newlines (one after each line) except there's no trailing newline,
 // so we have n-1 newlines + trailing content = n lines.
 func lineSrc(n int) string {
@@ -43,7 +43,7 @@ func lineSrc(n int) string {
 	}
 	lines := make([]string, n)
 	for i := 0; i < n; i++ {
-		lines[i] = "// line " + fmt.Sprintf("%d", i+1)
+		lines[i] = fmt.Sprintf("var x%d = %d", i, i)
 	}
 	// Don't add trailing newline - this ensures the file has n newlines + trailing content = n lines
 	return strings.Join(lines, "\n")
@@ -233,5 +233,49 @@ func TestCheck_RespectsExcludeFilePattern(t *testing.T) {
 
 	if len(report.Violations) != 0 {
 		t.Errorf("expected 0 violations (excluded pattern should filter toobig.go), got %d", len(report.Violations))
+	}
+}
+
+// Test: Given a .go file with 320 physical lines where only 41 are real code (rest blank/comment padding)
+// When filelen.Check runs with maxLines=300 - Then it reports 0 violations
+func TestCheck_LoCExcludesBlankAndCommentLines(t *testing.T) {
+	dir := t.TempDir()
+
+	// Case 1: 320 physical lines, 41 real code lines (280 blank lines + 1 package line + 39 comment lines)
+	filePath := filepath.Join(dir, "bigcomments.go")
+	content := "package main\n"
+	for i := 0; i < 40; i++ {
+		content += fmt.Sprintf("var x%d = %d\n", i, i)
+	}
+	// Add 279 blank lines to reach 320 total physical lines
+	for i := 0; i < 279; i++ {
+		content += "\n"
+	}
+	writeFile(t, filePath, content)
+
+	report, err := filelen.Check([]string{filePath}, 300, []string{".go"}, filelen.Options{})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report.Violations) != 0 {
+		t.Errorf("expected 0 violations for file with 320 physical / 41 LoC, got %d", len(report.Violations))
+	}
+
+	// Case 2: 500 physical lines, 1 real code line (package main), 499 comment lines
+	filePath2 := filepath.Join(dir, "allcomments.go")
+	content2 := "package main\n"
+	for i := 0; i < 499; i++ {
+		content2 += "// padding\n"
+	}
+	writeFile(t, filePath2, content2)
+
+	report2, err := filelen.Check([]string{filePath2}, 300, []string{".go"}, filelen.Options{})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	if len(report2.Violations) != 0 {
+		t.Errorf("expected 0 violations for file with 500 physical / 1 LoC, got %d", len(report2.Violations))
 	}
 }
