@@ -814,3 +814,34 @@ func TestRun_TemplateShowsCandidatesInsteadOfFixing(t *testing.T) {
 		}
 	}
 }
+
+func TestRun_TemplateProposesFixPlanForSelectedViolation(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// Required-present markers for the Fix Plan feature
+	requiredMarkers := []string{
+		"## Proposing a Fix Plan for Selected Violations",
+		"Fix Plan",
+		"never fabricate a fix plan for something that wasn't offered",
+		"one Fix Plan block per candidate, in the order they were listed",
+		"no code is written, no file is edited, nothing is drafted to disk",
+		"Do not edit, refactor, or commit anything in this skill",
+	}
+
+	for _, marker := range requiredMarkers {
+		if !strings.Contains(contentStr, marker) {
+			t.Errorf("expected skill template to contain %q, got:\n%s", marker, contentStr)
+		}
+	}
+}

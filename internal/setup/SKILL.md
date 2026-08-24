@@ -1,12 +1,12 @@
 ---
 name: boy-scout
-description: List code quality violations from the boy-scout lint checker, with code and reasoning, then stop — the user picks what to fix via @skills/to-plan and @skills/do-plan
+description: List code quality violations from the boy-scout lint checker, with code and reasoning; once the user picks which to fix, propose a fix plan for review, then stop — the user drives the actual change via @skills/to-plan and @skills/do-plan
 disable-model-invocation: true
 ---
 
 # boy-scout
 
-List code quality violations from the boy-scout lint checker — show each candidate's code and the reason it's flagged, then stop. This skill never edits or commits a file; you pick what to fix and drive the actual change through @skills/to-plan and @skills/do-plan.
+List code quality violations from the boy-scout lint checker — show each candidate's code and the reason it's flagged. Once you pick which to fix, it proposes a fix plan for each pick so you can review the approach, then stops. This skill never edits or commits a file; you drive the actual change through @skills/to-plan and @skills/do-plan.
 
 ## Discover Your Project's Language
 
@@ -97,9 +97,29 @@ For each selected candidate, show:
 
   2. [filelen] ...
 
-  Which one(s) do you want fixed? Run @skills/to-plan on your pick to draft a plan,
-  then @skills/do-plan to execute it.
+  Which one(s) do you want fixed?
   ```
 
-- Do not edit, refactor, or commit anything in this skill. `@skills/to-plan` and `@skills/do-plan` own the actual change from here.
+## Proposing a Fix Plan for Selected Violations
+
+Once the user answers which candidate(s) they want fixed:
+
+- If the answer doesn't match any listed candidate, say so and re-show the numbered list — never fabricate a fix plan for something that wasn't offered.
+- Otherwise, for each selected candidate, show one **Fix Plan** block: 2-5 ordered steps, each naming the exact file(s)/function(s)/package(s) it touches, expanded from the matching reference file's "How to fix it" section (the same file already read in Selecting Candidates). If more than one candidate was selected, show one Fix Plan block per candidate, in the order they were listed above.
+- This is a preview only — no code is written, no file is edited, nothing is drafted to disk in this step.
+
+Example shape:
+
+```
+Fix Plan — #1 [crap] internal/duplication/duplication.go:454 sortClustersByDupLines
+
+1. Extract the `if dup.CrossPackage` branch (lines 460-468) into `classifyDuplicate(dup) string`.
+2. Extract the sort comparator (lines 470-478) into `byDupLinesDesc(a, b Duplicate) bool`.
+3. Replace the two extracted blocks in `sortClustersByDupLines` with calls to the new functions.
+4. Re-run `go test ./internal/duplication/...` to confirm CRAP drops below 6.00.
+
+Run @skills/to-plan on this pick to draft the real plan, then @skills/do-plan to execute it.
+```
+
+- Do not edit, refactor, or commit anything in this skill — the Fix Plan block above is a preview, not a change. `@skills/to-plan` and `@skills/do-plan` own the actual change from here.
 
