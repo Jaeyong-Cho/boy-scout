@@ -1,12 +1,12 @@
 ---
 name: boy-scout
-description: Auto-fix code quality violations from the boy-scout lint checker
+description: List code quality violations from the boy-scout lint checker, with code and reasoning, then stop — the user picks what to fix via @skills/to-plan and @skills/do-plan
 disable-model-invocation: true
 ---
 
 # boy-scout
 
-Auto-fix code quality violations from the boy-scout lint checker.
+List code quality violations from the boy-scout lint checker — show each candidate's code and the reason it's flagged, then stop. This skill never edits or commits a file; you pick what to fix and drive the actual change through @skills/to-plan and @skills/do-plan.
 
 ## Discover Your Project's Language
 
@@ -44,15 +44,15 @@ For mixed-language projects, merge all violations from each language into a sing
 
 ## Before Starting
 
-**Check the tests are green:** Run your project's test suite once, before touching anything. If it fails, stop immediately and report that tests were already failing before any boy-scout edit — fix the test suite first, then re-run this skill. Never refactor on top of a red test suite; you can't tell your edit from pre-existing breakage.
+**Check the tests are green:** Run your project's test suite once, before reviewing anything. If it fails, stop immediately and report that tests were already failing before this review — fix the test suite first, then re-run this skill. Violations reviewed against a red baseline are not trustworthy: you can't tell a real violation from fallout of the existing breakage.
 
-## Processing Violations
+## Selecting Candidates
 
-Fix violations in order of disruption (least to most): funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication.
+Review violations in order of disruption (least to most): funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication.
 
-**Within each type, fix one violation per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), CRAP score (crap), summed DupLines (duplication), Gap (instability), Distance (abstractness). Test file violations (`*_test.go`, C++ tests) go last. If a fix fails, mark unresolved and move to the next type.
+**Within each type, select one candidate per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), CRAP score (crap), summed DupLines (duplication), Gap (instability), Distance (abstractness). Test file violations (`*_test.go`, C++ tests) go last. This produces at most one candidate per type — never select more than one, and never edit anything in this step.
 
-Before editing, read: language-agnostic reference (`references/{violation-type}.md`) and language-specific example (`references/lang/{go|cpp}/{violation-type}.md`).
+Before showing a candidate, read: language-agnostic reference (`references/{violation-type}.md`) and language-specific example (`references/lang/{go|cpp}/{violation-type}.md`).
 
 | Violation kind | Why/How | Go Example | C++ Example |
 |---|---|---|---|
@@ -69,28 +69,37 @@ Each "Why/How" file explains the concept and fix strategy generically. Each lang
 
 **CRAP violations in Go test files:** CRAP violations never appear for `_test.go` files by default (no flag needed) — the coverage formula is meaningless for test code by construction, since `go test -coverprofile` never instruments test files. If a `crap` violation is ever reported in a test file, it's a tool bug to flag, not test code to refactor.
 
-**Coverage for CRAP violations:** For a crap violation, check the coverage percentage already printed in the violation line. If it's 0%, first add one minimal characterization test — a test that pins down what the function does right now, not what it should do — and confirm it passes, before refactoring. If coverage is already above 0%, skip straight to refactoring; the existing tests plus the re-run-after-edit step below are enough of a safety net.
+**Duplication violations:** Run `--format=json` (not text output) to read the cluster's `members`, `pairs`, `dupLines`, and `crossPackage` fields — these are necessary to show which functions are duplicates of each other and how they're related. `references/duplication.md`'s "How to fix it" section covers the actual fix strategy for whoever runs @skills/to-plan next; this skill only needs the fields above to explain the candidate.
 
-**Duplication violations:** Run `--format=json` (not text output) to read the cluster's `members`, `pairs`, `dupLines`, and `crossPackage` fields — these are necessary to understand which functions are duplicates and how they're related. Fix the whole cluster in one atomic multi-file edit: extract one shared helper function covering every member's duplicate body, repoint every caller to use the shared helper, and delete every duplicate body once all callers switch over. This is one violation fix, not N separate fixes. After the extraction, run your test suite once to confirm the shared helper's behavior matches all the original copies. Default fix is always extract-a-helper (reversible, leaves both functions available if they later diverge), never delete-one-copy (you lose one implementation and can't recover it if the copies turn out to serve different purposes).
+## Showing Each Candidate
 
-## Verification Loop
+For each selected candidate, show:
 
-After each edit — including writing a characterization test — re-run your project's test suite and boy-scout for your language(s) to verify the fix. If the fix succeeds (both commands green), move to the next violation. If a violation, including its characterization test if one was needed, fails to fix after 3 attempts total, mark it unresolved and continue with the rest.
+1. The file:line and the severity number boy-scout printed.
+2. The flagged code — read the actual function/file boy-scout pointed at and quote it (the whole function for funclen/crap, the relevant snippet for filelen/duplication/instability/abstractness).
+3. A one-paragraph *why*, using the matching reference file's "Why this is a problem" section, filled in with this candidate's real numbers (e.g. "complexity=8, coverage=75%" for a crap violation) — not a generic copy-paste.
+4. A one-line *fix strategy* pointer, quoting the first sentence of the matching reference file's "How to fix it" section.
 
-## End of Run: Summary and Commit
+**Never edit or write to any file in this step.** Reading a flagged file to quote its code is fine; writing to it is not.
 
-At the end of the run, report the count of fixed vs. unresolved violations:
-- If boy-scout finds zero violations, report clean and make no edits.
-- If violations were fixed, show a summary: how many fixed, how many unresolved, how many skipped by the 5-per-run cap.
+## End of Run: Hand Off to the User
 
-**Check first**: the consistency of naming of source file, function, variables and documents.
+- If boy-scout finds zero violations, report clean and stop — nothing to show, nothing to select.
+- Otherwise, list every candidate selected above (at most one per type), each numbered with its code, why, and fix-strategy pointer, then ask which one(s) the user wants fixed. Example shape:
 
-**Commit your changes:** Ask the user to confirm they want to commit the fixes:
+  ```
+  Found N violation(s) to review:
 
-```
-You fixed N violations (M unresolved, K skipped by cap).
-Ready to commit these changes? (yes/no)
-```
+  1. [crap] internal/duplication/duplication.go:454 — sortClustersByDupLines, CRAP 9.00
+     <quoted code>
+     Why: ...
+     Fix strategy: ...
 
-- If **yes:** Run `git commit -m "Fix boy-scout violations (fixed: N, unresolved: M)"` to commit with a standard message.
-- If **no:** Stop here. The changes remain in your working directory for manual review or further edits before you commit manually.
+  2. [filelen] ...
+
+  Which one(s) do you want fixed? Run @skills/to-plan on your pick to draft a plan,
+  then @skills/do-plan to execute it.
+  ```
+
+- Do not edit, refactor, or commit anything in this skill. `@skills/to-plan` and `@skills/do-plan` own the actual change from here.
+

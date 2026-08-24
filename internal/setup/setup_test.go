@@ -127,7 +127,7 @@ func TestRun_CopiesBinaryWhenPathGiven(t *testing.T) {
 	}
 }
 
-func TestRun_TemplateDeclaresTDDRefactorAndViolationGuidance(t *testing.T) {
+func TestRun_TemplateDeclaresBaselineTestGate(t *testing.T) {
 	baseDir := t.TempDir()
 
 	path, err := Run(baseDir, "", ".agents")
@@ -145,9 +145,7 @@ func TestRun_TemplateDeclaresTDDRefactorAndViolationGuidance(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"BaselineGreenGate", "tests were already failing before any boy-scout edit"},
-		{"CharacterizationTestForZeroCoverage", "characterization test"},
-		{"AttemptCapIncludesCharacterizationTest", "including its characterization test"},
+		{"BaselineGreenGate", "tests were already failing before this review"},
 	}
 
 	for _, c := range cases {
@@ -403,7 +401,7 @@ func TestRun_TemplateNoLongerInlinesViolationExplanations(t *testing.T) {
 	}
 }
 
-func TestRun_TemplateDeclaresFixCapAndPriority(t *testing.T) {
+func TestRun_TemplateDeclaresSelectionCapAndPriority(t *testing.T) {
 	baseDir := t.TempDir()
 
 	path, err := Run(baseDir, "", ".agents")
@@ -421,10 +419,10 @@ func TestRun_TemplateDeclaresFixCapAndPriority(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"CapPerType", "Within each type, fix one violation per run"},
+		{"CapPerType", "Within each type, select one candidate per run"},
 		{"SeverityWorstFirst", "boy-scout's severity"},
 		{"TestFilesDeferredLast", "go last"},
-		{"ExampleMultipleViolationTypes", "mark unresolved and move to the next type"},
+		{"NeverEditWhileSelecting", "never edit anything in this step"},
 	}
 
 	for _, c := range cases {
@@ -598,12 +596,12 @@ func TestRun_TemplateStatesClusterCountsAsOnePerType(t *testing.T) {
 	contentStr := string(content)
 
 	// Check that the cap paragraph states one violation per type per run
-	if !strings.Contains(contentStr, "Within each type, fix one violation per run") {
+	if !strings.Contains(contentStr, "Within each type, select one candidate per run") {
 		t.Errorf("expected skill template to state one violation per type per run, got:\n%s", contentStr)
 	}
 }
 
-func TestRun_TemplateStatesDuplicationClusterFixRule(t *testing.T) {
+func TestRun_TemplateStatesDuplicationSelectionRule(t *testing.T) {
 	baseDir := t.TempDir()
 
 	path, err := Run(baseDir, "", ".agents")
@@ -626,21 +624,6 @@ func TestRun_TemplateStatesDuplicationClusterFixRule(t *testing.T) {
 	if !strings.Contains(contentStr, "members") || !strings.Contains(contentStr, "pairs") ||
 		!strings.Contains(contentStr, "dupLines") || !strings.Contains(contentStr, "crossPackage") {
 		t.Errorf("expected skill template to mention JSON fields (members, pairs, dupLines, crossPackage), got:\n%s", contentStr)
-	}
-
-	// Check for atomic edit instruction
-	if !strings.Contains(contentStr, "one atomic multi-file edit") {
-		t.Errorf("expected skill template to mention atomic edit requirement, got:\n%s", contentStr)
-	}
-
-	// Check for extract-a-helper default
-	if !strings.Contains(contentStr, "extract-a-helper") && !strings.Contains(contentStr, "extract one shared helper") {
-		t.Errorf("expected skill template to mention extract-a-helper default, got:\n%s", contentStr)
-	}
-
-	// Check for never delete-one-copy rule
-	if !strings.Contains(contentStr, "never delete-one-copy") {
-		t.Errorf("expected skill template to mention never delete-one-copy rule, got:\n%s", contentStr)
 	}
 }
 
@@ -786,5 +769,48 @@ func TestRun_CppReferencesHaveNoDuplicationFile(t *testing.T) {
 		t.Errorf("expected C++ duplication.md to NOT exist, but file was found at %q", duplicationPath)
 	} else if !os.IsNotExist(err) {
 		t.Errorf("unexpected error checking for C++ duplication.md: %v", err)
+	}
+}
+
+func TestRun_TemplateShowsCandidatesInsteadOfFixing(t *testing.T) {
+	baseDir := t.TempDir()
+
+	path, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read skill file: %v", err)
+	}
+	contentStr := string(content)
+
+	// Required-present markers
+	requiredMarkers := []string{
+		"List code quality violations",
+		"Never edit or write to any file in this step",
+		"@skills/to-plan",
+		"@skills/do-plan",
+		"Hand Off to the User",
+	}
+
+	for _, marker := range requiredMarkers {
+		if !strings.Contains(contentStr, marker) {
+			t.Errorf("expected skill template to contain %q, got:\n%s", marker, contentStr)
+		}
+	}
+
+	// Required-absent markers
+	absentMarkers := []string{
+		"git commit -m \"Fix boy-scout violations",
+		"Ready to commit these changes?",
+		"Verification Loop",
+	}
+
+	for _, marker := range absentMarkers {
+		if strings.Contains(contentStr, marker) {
+			t.Errorf("expected skill template to NOT contain %q, got:\n%s", marker, contentStr)
+		}
 	}
 }

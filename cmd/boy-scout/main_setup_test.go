@@ -1027,10 +1027,10 @@ func TestRun_SetupWritesCapAndPriorityGuidance(t *testing.T) {
 
 	// Verify all 4 markers from the cap-and-priority guidance are present
 	markers := []string{
-		"Within each type, fix one violation per run",
+		"Within each type, select one candidate per run",
 		"boy-scout's severity",
 		"go last",
-		"mark unresolved and move to the next type",
+		"never edit anything in this step",
 	}
 
 	for _, marker := range markers {
