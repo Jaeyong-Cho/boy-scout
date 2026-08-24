@@ -8,65 +8,76 @@ import (
 	"boy-scout/internal/tsfunclen"
 )
 
+// ============ TypeScript Checkers ============
+
+var tsFunclenCfg = CheckerConfig{
+	Name: "funclen",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := tsfunclen.Options{
+					ExcludeFiles: excludeFiles,
+					ExcludeFuncs: excludeFuncs,
+					Debug:        debug,
+				}
+				return tsfunclen.Check(paths, *maxLines, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderTsFunclenJSON(report.(tsfunclen.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderTsFunclenText(report.(tsfunclen.Report), stdout, stderr)
+	},
+}
+
+var tsFilelenCfg = CheckerConfig{
+	Name: "filelen",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := filelen.Options{
+					ExcludeFiles: excludeFiles,
+					Debug:        debug,
+				}
+				return filelen.Check(paths, *maxLines, []string{".ts", ".tsx", ".html", ".css"}, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderFilelenJSON(report.(filelen.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderFilelenText(report.(filelen.Report), stdout, stderr)
+	},
+}
+
+// Thin wrappers that dispatch to configs.
 func runTsFunclen(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("funclen", flag.ContinueOnError)
-	maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
-	format := fs.String("format", "text", "output format: text or json")
-	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
-	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
-	debug := fs.Bool("debug", false, "include excluded functions in output")
-
-	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
-	if err != nil {
-		reportError(err, stderr)
-		return 2
-	}
-
-	opts := tsfunclen.Options{
-		ExcludeFiles: excludeFiles,
-		ExcludeFuncs: excludeFuncs,
-		Debug:        *debug,
-	}
-
-	report, err := tsfunclen.Check(paths, *maxLines, opts)
-	if err != nil {
-		reportError(err, stderr)
-		return 2
-	}
-
-	return selectAndRender(format,
-		func(stdout, stderr io.Writer) int { return renderTsFunclenJSON(report, stdout, stderr) },
-		func(stdout, stderr io.Writer) int { return renderTsFunclenText(report, stdout, stderr) },
-		stdout, stderr)
+	return runCheck(tsFunclenCfg, args, stdout, stderr)
 }
 
 func runTsFilelen(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("filelen", flag.ContinueOnError)
-	maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
-	format := fs.String("format", "text", "output format: text or json")
-	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
-	excludeFunc := fs.String("exclude-func", "", "unused (filelen has no function-level concept)")
-	debug := fs.Bool("debug", false, "include excluded files in output")
+	return runCheck(tsFilelenCfg, args, stdout, stderr)
+}
 
-	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
-	if err != nil {
-		reportError(err, stderr)
-		return 2
+// runTsAll runs all TypeScript checks sequentially.
+func runTsAll(args []string, stdout, stderr io.Writer) int {
+	checks := []struct {
+		name string
+		fn   func([]string, io.Writer, io.Writer) int
+	}{
+		{"funclen", runTsFunclen},
+		{"filelen", runTsFilelen},
 	}
 
-	opts := filelen.Options{
-		ExcludeFiles: excludeFiles,
-		Debug:        *debug,
+	for _, check := range checks {
+		if result := check.fn(args, stdout, stderr); result != 0 {
+			return result
+		}
 	}
-
-	report, err := filelen.Check(paths, *maxLines, []string{".ts", ".tsx", ".html", ".css"}, opts)
-	if err != nil {
-		reportError(err, stderr)
-		return 2
-	}
-
-	return selectAndRender(format,
-		func(stdout, stderr io.Writer) int { return renderFilelenJSON(report, stdout, stderr) },
-		func(stdout, stderr io.Writer) int { return renderFilelenText(report, stdout, stderr) },
-		stdout, stderr)
+	return 0
 }
