@@ -27,30 +27,30 @@ type funcDef struct {
 	endLine   int
 }
 
+// findChildByTypes returns the first child of node matching any of the given types.
+func findChildByTypes(node *sitter.Node, types ...string) *sitter.Node {
+	typeMap := make(map[string]bool)
+	for _, t := range types {
+		typeMap[t] = true
+	}
+	for i := uint32(0); i < node.ChildCount(); i++ {
+		child := node.Child(int(i))
+		if typeMap[child.Type()] {
+			return child
+		}
+	}
+	return nil
+}
+
 // extractFunctionDef extracts function name and body span from function_declaration, generator_function_declaration, or method_definition
 func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
 	nodeType := node.Type()
 	assertf(nodeType == "function_declaration" || nodeType == "generator_function_declaration" || nodeType == "method_definition",
 		"extractFunctionDef called on non-function node: %s", nodeType)
 
-	// Find the body (statement_block child) and name (identifier child)
-	var bodyNode *sitter.Node
-	var nameNode *sitter.Node
+	bodyNode := findChildByTypes(node, "statement_block")
+	nameNode := findChildByTypes(node, "identifier", "property_identifier")
 
-	for i := uint32(0); i < node.ChildCount(); i++ {
-		child := node.Child(int(i))
-		childType := child.Type()
-		if childType == "statement_block" {
-			bodyNode = child
-		}
-		if childType == "identifier" || childType == "property_identifier" {
-			if nameNode == nil {
-				nameNode = child
-			}
-		}
-	}
-
-	// Body is required
 	assertf(bodyNode != nil, "function-like node without statement_block (body): %s", nodeType)
 
 	name := "?"
@@ -58,8 +58,6 @@ func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
 		name = strings.TrimSpace(string(source[nameNode.StartByte():nameNode.EndByte()]))
 	}
 
-	// Get start and end line from body's range
-	// Note: tree-sitter uses 0-indexed lines, but we want 1-indexed
 	startLine := int(bodyNode.StartPoint().Row) + 1
 	endLine := int(bodyNode.EndPoint().Row) + 1
 

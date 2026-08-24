@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
 
 	"boy-scout/internal/filelen"
@@ -19,7 +18,7 @@ func runTsFunclen(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -31,14 +30,14 @@ func runTsFunclen(args []string, stdout, stderr io.Writer) int {
 
 	report, err := tsfunclen.Check(paths, *maxLines, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderTsFunclenJSON(report, stdout, stderr)
-	}
-	return renderTsFunclenText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderTsFunclenJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderTsFunclenText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runTsFilelen(args []string, stdout, stderr io.Writer) int {
@@ -51,7 +50,7 @@ func runTsFilelen(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -62,12 +61,12 @@ func runTsFilelen(args []string, stdout, stderr io.Writer) int {
 
 	report, err := filelen.Check(paths, *maxLines, []string{".ts", ".tsx", ".html", ".css"}, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderFilelenJSON(report, stdout, stderr)
-	}
-	return renderFilelenText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderFilelenJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderFilelenText(report, stdout, stderr) },
+		stdout, stderr)
 }

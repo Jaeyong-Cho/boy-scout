@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
 
 	"boy-scout/internal/cppabstractness"
@@ -21,7 +20,7 @@ func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -32,14 +31,14 @@ func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 
 	report, err := filelen.Check(paths, *maxLines, []string{".cpp", ".h", ".hpp"}, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderFilelenJSON(report, stdout, stderr)
-	}
-	return renderFilelenText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderFilelenJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderFilelenText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runCppFunclen(args []string, stdout, stderr io.Writer) int {
@@ -52,7 +51,7 @@ func runCppFunclen(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -64,14 +63,14 @@ func runCppFunclen(args []string, stdout, stderr io.Writer) int {
 
 	report, err := cppfunclen.Check(paths, *maxLines, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderCppFunclenJSON(report, stdout, stderr)
-	}
-	return renderCppFunclenText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderCppFunclenJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderCppFunclenText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runCppInstability(args []string, stdout, stderr io.Writer) int {
@@ -84,7 +83,7 @@ func runCppInstability(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -95,14 +94,14 @@ func runCppInstability(args []string, stdout, stderr io.Writer) int {
 
 	report, err := cppinstability.Check(paths, *minGap, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderInstabilityJSON(report, stdout, stderr)
-	}
-	return renderInstabilityText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderInstabilityJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderInstabilityText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runCppAbstractness(args []string, stdout, stderr io.Writer) int {
@@ -115,7 +114,7 @@ func runCppAbstractness(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -126,12 +125,12 @@ func runCppAbstractness(args []string, stdout, stderr io.Writer) int {
 
 	report, err := cppabstractness.Check(paths, *minDistance, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderAbstractnessJSON(report, stdout, stderr)
-	}
-	return renderAbstractnessText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderAbstractnessJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderAbstractnessText(report, stdout, stderr) },
+		stdout, stderr)
 }

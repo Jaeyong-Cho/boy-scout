@@ -17,6 +17,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"boy-scout/internal/funcignore"
@@ -450,18 +451,16 @@ func isCrossPackage(members []FuncRef) bool {
 }
 
 // sortClustersByDupLines sorts clusters by DupLines descending, with ties broken by file then line
-// ponytail: bubble sort on small slices, fine for typical reports
 func sortClustersByDupLines(clusters []Cluster) {
-	for i := 0; i < len(clusters); i++ {
-		for j := i + 1; j < len(clusters); j++ {
-			if clusters[j].DupLines > clusters[i].DupLines ||
-				(clusters[j].DupLines == clusters[i].DupLines &&
-					(clusters[j].Members[0].File < clusters[i].Members[0].File ||
-						(clusters[j].Members[0].File == clusters[i].Members[0].File && clusters[j].Members[0].Line < clusters[i].Members[0].Line))) {
-				clusters[i], clusters[j] = clusters[j], clusters[i]
-			}
+	sort.Slice(clusters, func(i, j int) bool {
+		if clusters[i].DupLines != clusters[j].DupLines {
+			return clusters[i].DupLines > clusters[j].DupLines
 		}
-	}
+		if clusters[i].Members[0].File != clusters[j].Members[0].File {
+			return clusters[i].Members[0].File < clusters[j].Members[0].File
+		}
+		return clusters[i].Members[0].Line < clusters[j].Members[0].Line
+	})
 }
 
 // buildClusters groups violations into connected components using union-find,
@@ -472,53 +471,45 @@ func buildClusters(violations []Violation) []Cluster {
 	}
 
 	uf := newUnionFind()
-
-	// Build a map of all unique functions and union-find groups
 	funcMap := make(map[string]FuncRef)  // key: file:line:func, value: FuncRef
 	groupMembers := make(map[string][]string) // key: root, value: member keys
 
 	for _, v := range violations {
 		keyA := fmt.Sprintf("%s:%d:%s", v.FileA, v.LineA, v.FuncA)
 		keyB := fmt.Sprintf("%s:%d:%s", v.FileB, v.LineB, v.FuncB)
-
 		funcMap[keyA] = FuncRef{File: v.FileA, Line: v.LineA, Func: v.FuncA}
 		funcMap[keyB] = FuncRef{File: v.FileB, Line: v.LineB, Func: v.FuncB}
-
 		uf.union(keyA, keyB)
 	}
 
-	// Group functions by their root in union-find
 	for key := range funcMap {
 		root := uf.find(key)
 		groupMembers[root] = append(groupMembers[root], key)
 	}
 
-	// Build clusters from groups
 	var clusters []Cluster
 	for root, memberKeys := range groupMembers {
-		// Extract unique members
-		var members []FuncRef
-		for _, key := range memberKeys {
-			members = append(members, funcMap[key])
-		}
-
-		sortMembers(members)
-		clusterPairs := collectClusterPairs(violations, uf, root)
-		dupLines := totalDupLines(clusterPairs)
-
-		// postcondition assert: cluster must have at least 2 members (guaranteed by construction)
-		assertf(len(members) >= 2, "cluster %v has fewer than 2 members", root)
-
-		clusters = append(clusters, Cluster{
-			Members:      members,
-			Pairs:        clusterPairs,
-			DupLines:     dupLines,
-			CrossPackage: isCrossPackage(members),
-		})
+		clusters = append(clusters, buildCluster(root, memberKeys, funcMap, violations, uf))
 	}
-
 	sortClustersByDupLines(clusters)
 	return clusters
+}
+
+func buildCluster(root string, memberKeys []string, funcMap map[string]FuncRef, violations []Violation, uf *unionFind) Cluster {
+	var members []FuncRef
+	for _, key := range memberKeys {
+		members = append(members, funcMap[key])
+	}
+	sortMembers(members)
+	clusterPairs := collectClusterPairs(violations, uf, root)
+	dupLines := totalDupLines(clusterPairs)
+	assertf(len(members) >= 2, "cluster %v has fewer than 2 members", root)
+	return Cluster{
+		Members:      members,
+		Pairs:        clusterPairs,
+		DupLines:     dupLines,
+		CrossPackage: isCrossPackage(members),
+	}
 }
 
 // reportDuplicates compares all function pairs and builds violation list with similarity threshold

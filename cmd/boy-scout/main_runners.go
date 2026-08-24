@@ -23,7 +23,7 @@ func runGoFunclen(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -35,14 +35,14 @@ func runGoFunclen(args []string, stdout, stderr io.Writer) int {
 
 	report, err := gofunclen.Check(paths, *maxLines, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderJSON(report, stdout, stderr)
-	}
-	return renderText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runGoCrap(args []string, stdout, stderr io.Writer) int {
@@ -55,7 +55,7 @@ func runGoCrap(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -67,14 +67,14 @@ func runGoCrap(args []string, stdout, stderr io.Writer) int {
 
 	report, err := crap.Check(paths, *threshold, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderCrapJSON(report, stdout, stderr)
-	}
-	return renderCrapText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderCrapJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderCrapText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runGoFilelen(args []string, stdout, stderr io.Writer) int {
@@ -87,7 +87,7 @@ func runGoFilelen(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -98,14 +98,14 @@ func runGoFilelen(args []string, stdout, stderr io.Writer) int {
 
 	report, err := filelen.Check(paths, *maxLines, []string{".go"}, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderFilelenJSON(report, stdout, stderr)
-	}
-	return renderFilelenText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderFilelenJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderFilelenText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runGoDuplication(args []string, stdout, stderr io.Writer) int {
@@ -119,13 +119,12 @@ func runGoDuplication(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	// Validate minSimilarity range
 	if *minSimilarity < 0.0 || *minSimilarity > 1.0 {
-		fmt.Fprintf(stderr, "error: --min-similarity must be in range [0.0, 1.0], got %v\n", *minSimilarity)
+		reportError(fmt.Errorf("--min-similarity must be in range [0.0, 1.0], got %v", *minSimilarity), stderr)
 		return 2
 	}
 
@@ -137,14 +136,14 @@ func runGoDuplication(args []string, stdout, stderr io.Writer) int {
 
 	report, err := duplication.CheckWithSimilarity(paths, *minLines, *minSimilarity, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderDuplicationJSON(report, stdout, stderr)
-	}
-	return renderDuplicationText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderDuplicationJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderDuplicationText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runGoInstability(args []string, stdout, stderr io.Writer) int {
@@ -157,7 +156,7 @@ func runGoInstability(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -168,14 +167,14 @@ func runGoInstability(args []string, stdout, stderr io.Writer) int {
 
 	report, err := instability.Check(paths, *minGap, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderInstabilityJSON(report, stdout, stderr)
-	}
-	return renderInstabilityText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderInstabilityJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderInstabilityText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runGoAbstractness(args []string, stdout, stderr io.Writer) int {
@@ -190,7 +189,7 @@ func runGoAbstractness(args []string, stdout, stderr io.Writer) int {
 
 	paths, excludeFiles, _, err := resolveArgs(fs, args, excludeFile, excludeFunc)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
@@ -202,14 +201,14 @@ func runGoAbstractness(args []string, stdout, stderr io.Writer) int {
 
 	report, err := abstractness.CheckWithSurfaceRatio(paths, *minDistance, *minSurfaceRatio, opts)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		reportError(err, stderr)
 		return 2
 	}
 
-	if *format == "json" {
-		return renderAbstractnessJSON(report, stdout, stderr)
-	}
-	return renderAbstractnessText(report, stdout, stderr)
+	return selectAndRender(format,
+		func(stdout, stderr io.Writer) int { return renderAbstractnessJSON(report, stdout, stderr) },
+		func(stdout, stderr io.Writer) int { return renderAbstractnessText(report, stdout, stderr) },
+		stdout, stderr)
 }
 
 func runGoAll(args []string, stdout, stderr io.Writer) int {

@@ -16,6 +16,19 @@ import (
 	"boy-scout/internal/tsfunclen"
 )
 
+// reportError writes an error message to stderr and returns exit code 2.
+func reportError(err error, stderr io.Writer) {
+	fmt.Fprintf(stderr, "error: %v\n", err)
+}
+
+// selectAndRender chooses between JSON and text renderer based on format flag.
+func selectAndRender(format *string, jsonRender, textRender func(io.Writer, io.Writer) int, stdout, stderr io.Writer) int {
+	if *format == "json" {
+		return jsonRender(stdout, stderr)
+	}
+	return textRender(stdout, stderr)
+}
+
 // renderReportAsJSON marshals any report to JSON and renders it.
 // Uses reflection to extract violation and skipped counts from the report.
 func renderReportAsJSON(report any, stdout, stderr io.Writer) int {
