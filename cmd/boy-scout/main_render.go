@@ -51,6 +51,24 @@ func renderReportAsJSON(report any, stdout, stderr io.Writer) int {
 	return exitCodeFor(numViolations, numSkipped)
 }
 
+// writeLines is a generic helper that writes violations and excluded entries to w,
+// each line prefixed with prefix. It accepts two formatter functions to customize the output.
+// Nil slices are handled gracefully (no output for nil).
+func writeLines[V, E any](w io.Writer, prefix string, violations []V, excluded []E, formatViolation func(V) string, formatExcluded func(E) string) {
+	if violations == nil {
+		violations = []V{}
+	}
+	if excluded == nil {
+		excluded = []E{}
+	}
+	for _, v := range violations {
+		fmt.Fprintf(w, "%s%s\n", prefix, formatViolation(v))
+	}
+	for _, e := range excluded {
+		fmt.Fprintf(w, "%s%s\n", prefix, formatExcluded(e))
+	}
+}
+
 // writeCrapLines writes a crap report's violations and excluded entries to w,
 // each line prefixed with prefix (e.g. "[crap] " when combined with other checks).
 func writeCrapLines(w io.Writer, prefix string, report crap.Report) {
@@ -79,13 +97,15 @@ func renderCrapJSON(report crap.Report, stdout, stderr io.Writer) int {
 // writeFilelenLines writes a filelen report's violations and excluded files to w,
 // each line prefixed with prefix (e.g. "[filelen] " when combined with other checks).
 func writeFilelenLines(w io.Writer, prefix string, report filelen.Report) {
-	for _, v := range report.Violations {
-		fmt.Fprintf(w, "%s%s: %d lines (limit %d)\n",
-			prefix, v.File, v.Lines, v.Limit)
-	}
-	for _, f := range report.ExcludedFiles {
-		fmt.Fprintf(w, "%sexcluded file: %s\n", prefix, f)
-	}
+	writeLines(w, prefix, report.Violations, report.ExcludedFiles,
+		func(v filelen.Violation) string {
+			return fmt.Sprintf("%s: %d lines (limit %d)",
+				v.File, v.Lines, v.Limit)
+		},
+		func(f string) string {
+			return fmt.Sprintf("excluded file: %s", f)
+		},
+	)
 }
 
 func renderFilelenText(report filelen.Report, stdout, stderr io.Writer) int {
@@ -135,13 +155,15 @@ func renderDuplicationJSON(report duplication.Report, stdout, stderr io.Writer) 
 // writeInstabilityLines writes an instability report's violations to w,
 // each line prefixed with prefix (e.g. "[instability] " when combined with other checks).
 func writeInstabilityLines(w io.Writer, prefix string, report instability.Report) {
-	for _, v := range report.Violations {
-		fmt.Fprintf(w, "%s%s -> %s: Gap=%.3f (I_source=%.3f, I_target=%.3f)\n",
-			prefix, v.Source, v.Target, v.Gap, v.I_A, v.I_B)
-	}
-	for _, f := range report.Skipped {
-		fmt.Fprintf(w, "%sskipped file: %s (%s)\n", prefix, f.File, f.Error)
-	}
+	writeLines(w, prefix, report.Violations, report.Skipped,
+		func(v instability.Violation) string {
+			return fmt.Sprintf("%s -> %s: Gap=%.3f (I_source=%.3f, I_target=%.3f)",
+				v.Source, v.Target, v.Gap, v.I_A, v.I_B)
+		},
+		func(f instability.SkippedFile) string {
+			return fmt.Sprintf("skipped file: %s (%s)", f.File, f.Error)
+		},
+	)
 	fmt.Fprintf(w, "%stotal edges: %d, violation rate: %.3f, weighted violation rate: %.3f\n",
 		prefix, report.TotalEdges, report.ViolationRate, report.WeightedViolationRate)
 }
@@ -158,18 +180,19 @@ func renderInstabilityJSON(report instability.Report, stdout, stderr io.Writer) 
 // writeAbstractnessLines writes an abstractness report's violations to w,
 // each line prefixed with prefix (e.g. "[abstractness] " when combined with other checks).
 func writeAbstractnessLines(w io.Writer, prefix string, report abstractness.Report) {
-	for _, v := range report.Violations {
-		if v.Zone == "Pain" {
-			fmt.Fprintf(w, "%s%s: Zone=%s, Distance=%.3f, SurfaceRatio=%.3f (A=%.3f, I=%.3f)\n",
-				prefix, v.ImportPath, v.Zone, v.Distance, v.SurfaceRatio, v.Abstractness, v.Instability)
-		} else {
-			fmt.Fprintf(w, "%s%s: Zone=%s, Distance=%.3f (A=%.3f, I=%.3f)\n",
-				prefix, v.ImportPath, v.Zone, v.Distance, v.Abstractness, v.Instability)
-		}
-	}
-	for _, f := range report.Skipped {
-		fmt.Fprintf(w, "%sskipped file: %s (%s)\n", prefix, f.File, f.Error)
-	}
+	writeLines(w, prefix, report.Violations, report.Skipped,
+		func(v abstractness.PackageDiagnosis) string {
+			if v.Zone == "Pain" {
+				return fmt.Sprintf("%s: Zone=%s, Distance=%.3f, SurfaceRatio=%.3f (A=%.3f, I=%.3f)",
+					v.ImportPath, v.Zone, v.Distance, v.SurfaceRatio, v.Abstractness, v.Instability)
+			}
+			return fmt.Sprintf("%s: Zone=%s, Distance=%.3f (A=%.3f, I=%.3f)",
+				v.ImportPath, v.Zone, v.Distance, v.Abstractness, v.Instability)
+		},
+		func(f abstractness.SkippedFile) string {
+			return fmt.Sprintf("skipped file: %s (%s)", f.File, f.Error)
+		},
+	)
 	fmt.Fprintf(w, "%stotal packages: %d\n",
 		prefix, report.TotalPackages)
 }
@@ -259,14 +282,16 @@ func renderJSON(report gofunclen.Report, stdout, stderr io.Writer) int {
 
 // writeCppFunclenLines writes a cpp funclen report's violations and excluded entries to w.
 func writeCppFunclenLines(w io.Writer, prefix string, report cppfunclen.Report) {
-	for _, v := range report.Violations {
-		fmt.Fprintf(w, "%s%s:%d: function %s is %d lines (limit %d)\n",
-			prefix, v.File, v.Line, v.Func, v.Length, v.Limit)
-	}
-	for _, exc := range report.ExcludedFuncs {
-		fmt.Fprintf(w, "%s%s: function %s excluded (%s)\n",
-			prefix, exc.File, exc.Func, exc.Reason)
-	}
+	writeLines(w, prefix, report.Violations, report.ExcludedFuncs,
+		func(v cppfunclen.Violation) string {
+			return fmt.Sprintf("%s:%d: function %s is %d lines (limit %d)",
+				v.File, v.Line, v.Func, v.Length, v.Limit)
+		},
+		func(exc cppfunclen.ExcludedFunc) string {
+			return fmt.Sprintf("%s: function %s excluded (%s)",
+				exc.File, exc.Func, exc.Reason)
+		},
+	)
 }
 
 func renderCppFunclenText(report cppfunclen.Report, stdout, stderr io.Writer) int {
@@ -280,14 +305,16 @@ func renderCppFunclenJSON(report cppfunclen.Report, stdout, stderr io.Writer) in
 
 // writeTsFunclenLines writes a ts funclen report's violations and excluded entries to w.
 func writeTsFunclenLines(w io.Writer, prefix string, report tsfunclen.Report) {
-	for _, v := range report.Violations {
-		fmt.Fprintf(w, "%s%s:%d: function %s is %d lines (limit %d)\n",
-			prefix, v.File, v.Line, v.Func, v.Length, v.Limit)
-	}
-	for _, exc := range report.ExcludedFuncs {
-		fmt.Fprintf(w, "%s%s: function %s excluded (%s)\n",
-			prefix, exc.File, exc.Func, exc.Reason)
-	}
+	writeLines(w, prefix, report.Violations, report.ExcludedFuncs,
+		func(v tsfunclen.Violation) string {
+			return fmt.Sprintf("%s:%d: function %s is %d lines (limit %d)",
+				v.File, v.Line, v.Func, v.Length, v.Limit)
+		},
+		func(exc tsfunclen.ExcludedFunc) string {
+			return fmt.Sprintf("%s: function %s excluded (%s)",
+				exc.File, exc.Func, exc.Reason)
+		},
+	)
 }
 
 func renderTsFunclenText(report tsfunclen.Report, stdout, stderr io.Writer) int {
