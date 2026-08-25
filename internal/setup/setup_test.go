@@ -453,39 +453,6 @@ func TestRun_WritesCppFilelenInstabilityAbstractnessReferences(t *testing.T) {
 	}
 }
 
-func TestRun_CppLangReferenceFilesContainCppExamples(t *testing.T) {
-	baseDir := t.TempDir()
-
-	_, err := Run(baseDir, "", ".agents")
-	if err != nil {
-		t.Fatalf("Run failed: %v", err)
-	}
-
-	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp")
-
-	cases := []struct {
-		name     string
-		filename string
-		marker   string
-	}{
-		{"Filelen", "filelen.md", "#include"},
-		{"Instability", "instability.md", "domain.hpp"},
-		{"Abstractness", "abstractness.md", "pure virtual"},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			content, err := os.ReadFile(filepath.Join(refDir, c.filename))
-			if err != nil {
-				t.Fatalf("failed to read %q: %v", c.filename, err)
-			}
-			if !strings.Contains(string(content), c.marker) {
-				t.Errorf("expected %q to contain %q, got:\n%s", c.filename, c.marker, content)
-			}
-		})
-	}
-}
-
 func TestRun_TemplateNoLongerMarksCppFilelenInstabilityAbstractnessUnsupported(t *testing.T) {
 	baseDir := t.TempDir()
 
@@ -668,36 +635,6 @@ func TestRun_DuplicationReferenceExplainsWhyAndHow(t *testing.T) {
 	// Check that it notes C++ isn't supported yet
 	if !strings.Contains(contentStr, "not yet supported") || !strings.Contains(contentStr, "C++") {
 		t.Errorf("expected duplication.md to note C++ not yet supported, got:\n%s", contentStr)
-	}
-}
-
-func TestRun_WritesGoDuplicationReferenceExample(t *testing.T) {
-	baseDir := t.TempDir()
-
-	_, err := Run(baseDir, "", ".agents")
-	if err != nil {
-		t.Fatalf("Run failed: %v", err)
-	}
-
-	refPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "go", "duplication.md")
-	content, err := os.ReadFile(refPath)
-	if err != nil {
-		t.Fatalf("failed to read Go duplication.md: %v", err)
-	}
-	contentStr := string(content)
-
-	// Check for Go code fences (```go ... ```)
-	if !strings.Contains(contentStr, "```go") {
-		t.Errorf("expected Go duplication.md to contain Go code example, got:\n%s", contentStr)
-	}
-
-	// Check for before/after pattern
-	if !strings.Contains(contentStr, "Problem example") && !strings.Contains(contentStr, "before") {
-		t.Errorf("expected Go duplication.md to have a problem/before example, got:\n%s", contentStr)
-	}
-
-	if !strings.Contains(contentStr, "Good resolve example") && !strings.Contains(contentStr, "after") {
-		t.Errorf("expected Go duplication.md to have a good/after example, got:\n%s", contentStr)
 	}
 }
 

@@ -1,41 +1,9 @@
 # Duplication Violations — Go Example
 
-## Problem example
+## Problem
 
-```go
-func CalculateTax(baseAmount float64) float64 {
-	taxRate := 0.08
-	return baseAmount * taxRate
-}
+The same algorithm or logic appears in multiple places. If the algorithm needs to change (for correctness, edge cases, rounding), all copies must be updated consistently.
 
-func CalculateFee(baseAmount float64) float64 {
-	feeRate := 0.05
-	return baseAmount * feeRate
-}
-```
+## Solution
 
-Both functions perform the same percentage calculation: multiply the base by a rate. The duplication is the shared algorithm — `base * rate` — appearing in two places.
-
-## Good resolve example
-
-Extract the shared calculation into one helper:
-
-```go
-func calculatePercentage(base float64, rate float64) float64 {
-	return base * rate
-}
-
-func CalculateTax(baseAmount float64) float64 {
-	return calculatePercentage(baseAmount, 0.08)
-}
-
-func CalculateFee(baseAmount float64) float64 {
-	return calculatePercentage(baseAmount, 0.05)
-}
-```
-
-Now the core algorithm — `base * rate` — lives in one place. If the calculation ever needs to change (e.g., to handle edge cases, apply rounding, or log calls), one edit fixes both callers. Adding a new percentage-based calculation (discount, rebate, etc.) just calls `calculatePercentage` again.
-
-The extracted helper is private (`calculatePercentage` with a lowercase initial) because it's internal to this package. If similar calculations appear in other packages, the solution escalates: extract to a shared package (e.g., `internal/math`), export the helper, and import it in both packages.
-
-After extraction, run your test suite to confirm `CalculateTax` and `CalculateFee` still produce the same results. Boy-scout will no longer report this cluster as a violation.
+Extract the shared logic into a single helper function. If the duplication is within a package, make it private. If it spans packages, extract to a shared package, export it, and import it in both places. This way, changes to the algorithm happen once and automatically apply everywhere it's used.
