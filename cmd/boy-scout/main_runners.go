@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	"boy-scout/internal/abstractness"
 	"boy-scout/internal/duplication"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
-	"boy-scout/internal/instability"
 	"boy-scout/internal/linelen"
 )
 
@@ -177,53 +175,6 @@ var goDuplicationCfg = CheckerConfig{
 	},
 }
 
-var goInstabilityCfg = CheckerConfig{
-	Name: "instability",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-		minGap := fs.Float64("min-gap", 0, "minimum gap to report (violations with Gap > min-gap)")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := instability.Options{
-					ExcludeFiles: excludeFiles,
-					Debug:        debug,
-				}
-				return instability.Check(paths, *minGap, opts)
-			}
-		}
-	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderInstabilityJSON(report.(instability.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderInstabilityText(report.(instability.Report), stdout, stderr)
-	},
-}
-
-var goAbstractnessCfg = CheckerConfig{
-	Name: "abstractness",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-		minDistance := fs.Float64("min-distance", 0.5, "minimum distance from main sequence to report (packages with |signedD| > min-distance)")
-		minSurfaceRatio := fs.Float64("min-surface-ratio", 0.5, "minimum surface ratio for Pain zone candidates (ratio of exported to total declarations; only applies to Pain, not Uselessness)")
-		ignoreDeepModuleGate := fs.Bool("ignore-deep-module-gate", false, "if true, flag all Pain candidates regardless of surface ratio (Story 2 behavior)")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := abstractness.Options{
-					ExcludeFiles:         excludeFiles,
-					Debug:                debug,
-					IgnoreDeepModuleGate: *ignoreDeepModuleGate,
-				}
-				return abstractness.CheckWithSurfaceRatio(paths, *minDistance, *minSurfaceRatio, opts)
-			}
-		}
-	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderAbstractnessJSON(report.(abstractness.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderAbstractnessText(report.(abstractness.Report), stdout, stderr)
-	},
-}
-
 // Thin wrappers that dispatch to configs (preserves the dispatch map interface).
 func runGoFunclen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goFunclenCfg, args, stdout, stderr)
@@ -245,14 +196,6 @@ func runGoDuplication(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goDuplicationCfg, args, stdout, stderr)
 }
 
-func runGoInstability(args []string, stdout, stderr io.Writer) int {
-	return runCheck(goInstabilityCfg, args, stdout, stderr)
-}
-
-func runGoAbstractness(args []string, stdout, stderr io.Writer) int {
-	return runCheck(goAbstractnessCfg, args, stdout, stderr)
-}
-
 // runGoAll runs all Go checks and combines their reports.
 func runGoAll(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("all", flag.ContinueOnError)
@@ -267,20 +210,18 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, instabilityReport, abstractnessReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		reportError(err, stderr)
 		return 2
 	}
 
 	combined := combinedReport{
-		Gofunclen:    gofunclenReport,
-		Complexity:   complexityReport,
-		Filelen:      filelenReport,
-		Linelen:      linelenReport,
-		Duplication:  duplicationReport,
-		Instability:  instabilityReport,
-		Abstractness: abstractnessReport,
+		Gofunclen:   gofunclenReport,
+		Complexity:  complexityReport,
+		Filelen:     filelenReport,
+		Linelen:     linelenReport,
+		Duplication: duplicationReport,
 	}
 
 	// Render output
@@ -291,15 +232,13 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 }
 
 // checkAll runs all checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, gocomplexity.Report, filelen.Report, linelen.Report, duplication.Report, instability.Report, abstractness.Report, error) {
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, gocomplexity.Report, filelen.Report, linelen.Report, duplication.Report, error) {
 	var (
 		gofunclenReport   gofunclen.Report
 		complexityReport  gocomplexity.Report
 		filelenReport     filelen.Report
 		linelenReport     linelen.Report
 		duplicationReport duplication.Report
-		instabilityReport instability.Report
-		abstractnessReport abstractness.Report
 	)
 
 	checks := []func() error{
@@ -328,25 +267,15 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 			duplicationReport, err = checkAllDuplication(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
-		func() error {
-			var err error
-			instabilityReport, err = checkAllInstability(paths, excludeFiles, debug)
-			return err
-		},
-		func() error {
-			var err error
-			abstractnessReport, err = checkAllAbstractness(paths, excludeFiles, debug)
-			return err
-		},
 	}
 
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, instabilityReport, abstractnessReport, err
+			return gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, err
 		}
 	}
 
-	return gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, instabilityReport, abstractnessReport, nil
+	return gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, nil
 }
 
 func checkAllGofunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, error) {
@@ -392,18 +321,3 @@ func checkAllDuplication(paths []string, excludeFiles, excludeFuncs []string, de
 	return duplication.Check(paths, 5, opts)
 }
 
-func checkAllInstability(paths []string, excludeFiles []string, debug bool) (instability.Report, error) {
-	opts := instability.Options{
-		ExcludeFiles: excludeFiles,
-		Debug:        debug,
-	}
-	return instability.Check(paths, 0, opts)
-}
-
-func checkAllAbstractness(paths []string, excludeFiles []string, debug bool) (abstractness.Report, error) {
-	opts := abstractness.Options{
-		ExcludeFiles: excludeFiles,
-		Debug:        debug,
-	}
-	return abstractness.Check(paths, 0.5, opts)
-}

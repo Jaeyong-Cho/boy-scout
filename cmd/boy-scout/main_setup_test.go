@@ -885,9 +885,9 @@ func TestRun_SetupWritesReferenceFiles(t *testing.T) {
 		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
 	}
 
-	// Verify all 5 reference files exist
+	// Verify reference files exist
 	refDir := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references")
-	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md", "instability.md", "abstractness.md"}
+	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md"}
 
 	for _, filename := range referenceFiles {
 		path := filepath.Join(refDir, filename)
@@ -904,16 +904,6 @@ func TestRun_SetupWritesReferenceFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(funclenContent), "one level of abstraction") {
 		t.Errorf("expected funclen.md to contain 'one level of abstraction', got:\n%s", funclenContent)
-	}
-
-	// Verify abstractness.md contains expected marker
-	abstractnessPath := filepath.Join(refDir, "abstractness.md")
-	abstractnessContent, err := os.ReadFile(abstractnessPath)
-	if err != nil {
-		t.Fatalf("failed to read abstractness.md: %v", err)
-	}
-	if !strings.Contains(string(abstractnessContent), "Zone of Pain") {
-		t.Errorf("expected abstractness.md to contain 'Zone of Pain', got:\n%s", abstractnessContent)
 	}
 }
 
@@ -987,7 +977,7 @@ func TestRun_SetupWritesCppFilelenInstabilityAbstractnessReferences(t *testing.T
 	}
 
 	refDir := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp")
-	for _, filename := range []string{"filelen.md", "instability.md", "abstractness.md"} {
+	for _, filename := range []string{"filelen.md"} {
 		path := filepath.Join(refDir, filename)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("expected %q to exist, got error: %v", filename, err)
