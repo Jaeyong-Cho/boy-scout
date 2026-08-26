@@ -2182,3 +2182,154 @@ func TestRun_ComplexityDefaultsToCurrentDir(t *testing.T) {
 	}
 }
 
+func TestRun_GoLinelenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a short Go file
+	shortFile := filepath.Join(tmpDir, "short.go")
+	if err := os.WriteFile(shortFile, []byte("package main\nfunc main() {}"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a long Go file with a 105-char line (exceeding limit of 100)
+	longFile := filepath.Join(tmpDir, "long.go")
+	line105 := "x := " + strings.Repeat("1", 100) // 5 + 100 = 105 chars
+	if err := os.WriteFile(longFile, []byte(line105+"\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"go", "linelen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long file as violation
+	if !strings.Contains(output, "long.go") {
+		t.Errorf("expected output to contain 'long.go', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "105") {
+		t.Errorf("expected output to contain '105', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+func TestRun_CppLinelenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a short C++ file
+	shortFile := filepath.Join(tmpDir, "short.cpp")
+	if err := os.WriteFile(shortFile, []byte("int main() { return 0; }"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a long C++ file with a 105-char line (exceeding limit of 100)
+	longFile := filepath.Join(tmpDir, "long.cpp")
+	line105 := "int x = " + strings.Repeat("1", 97) // 8 + 97 = 105 chars
+	if err := os.WriteFile(longFile, []byte(line105+";\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"cpp", "linelen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long file as violation
+	if !strings.Contains(output, "long.cpp") {
+		t.Errorf("expected output to contain 'long.cpp', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "106") { // 105 + 1 for the semicolon
+		t.Errorf("expected output to contain '106', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+func TestRun_TsLinelenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a short TypeScript file
+	shortFile := filepath.Join(tmpDir, "short.ts")
+	if err := os.WriteFile(shortFile, []byte("function foo() { return 1; }"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a long TypeScript file with a 105-char line (exceeding limit of 100)
+	longFile := filepath.Join(tmpDir, "long.ts")
+	line105 := "const x = " + strings.Repeat("1", 95) // 10 + 95 = 105 chars
+	if err := os.WriteFile(longFile, []byte(line105+";\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"ts", "linelen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long file as violation
+	if !strings.Contains(output, "long.ts") {
+		t.Errorf("expected output to contain 'long.ts', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "106") { // 105 + 1 for the semicolon
+		t.Errorf("expected output to contain '106', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+func TestRun_AllIncludesLinelen(t *testing.T) {
+	// Create a temp dir with a long line
+	tmpDir := t.TempDir()
+
+	lines := []string{"package main", "", "func TestFunc() {"}
+	lines = append(lines, "\t// "+strings.Repeat("x", 105)) // A 100+ char comment line
+	lines = append(lines, "}")
+	src := strings.Join(lines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/long_line.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	// Test text output
+	var stdoutBuf, stderrBuf bytes.Buffer
+	_ = run([]string{"go", "all", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	stderr := stderrBuf.String()
+
+	if !strings.Contains(output, "[linelen]") {
+		t.Errorf("expected '[linelen]' in text output, got:\nstdout: %s\nstderr: %s", output, stderr)
+	}
+
+	// Test JSON output
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	_ = run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	jsonOutput := stdoutBuf.String()
+	stderr = stderrBuf.String()
+
+	if !strings.Contains(jsonOutput, "\"linelen\"") {
+		t.Errorf("expected '\"linelen\"' key in JSON output, got:\nstdout: %s\nstderr: %s", jsonOutput, stderr)
+	}
+}
+
