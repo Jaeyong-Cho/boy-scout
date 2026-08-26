@@ -152,72 +152,6 @@ func TestRun_SetupWriteFailureExitsTwo(t *testing.T) {
 	}
 }
 
-func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
-	// Create a fixture with a function long enough for gofunclen (105 lines)
-	// and complex enough for crap (5 nested ifs = complexity 5, with no coverage = score = 5^2*(1-0)^3 + 5 = 30, way above 6.0 threshold)
-	src := "package main\n\n// boy-scout:ignore:crap\nfunc ViolatingFunc() {\n"
-	for i := 0; i < 100; i++ {
-		src += fmt.Sprintf("\t_ = %d\n", i)
-	}
-	src += "\tif true {\n\t\tif true {\n\t\t\tif true {\n\t\t\t\tif true {\n\t\t\t\t\tif true {\n\t\t\t\t\t\t_ = \"x\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"
-
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "main.go", src)
-	initModule(t, tmpDir)
-
-	report, exitCode := runAllJSON(t)
-
-	// funclen should report ViolatingFunc (directive doesn't name gofunclen)
-	if !hasViolation(report.Gofunclen.Violations, "ViolatingFunc") {
-		t.Errorf("expected ViolatingFunc in funclen violations, got %v", report.Gofunclen.Violations)
-	}
-
-	// crap should NOT report ViolatingFunc (directive names crap, so it's excluded)
-	if hasViolation(report.Crap.Violations, "ViolatingFunc") {
-		t.Errorf("expected ViolatingFunc NOT in crap violations, but found it")
-	}
-
-	// Exit code should be 1 (violation from gofunclen)
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-
-func TestRun_AllCrapSectionIgnoresTestFilesByDefault(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	writeGoFile(t, tmpDir, "main.go", `package main
-func Add(a, b int) int {
-	return a + b
-}
-`)
-
-	// main_test.go has an untested, deeply-nested helper function
-	writeGoFile(t, tmpDir, "main_test.go", `package main
-import "testing"
-func TestAdd(t *testing.T) {
-	_ = Add(1, 2)
-}
-func chdirTemp() {
-	if true { if true { if true { if true { if true { } } } } }
-}
-`)
-
-	initModule(t, tmpDir)
-
-	// Run "all" with JSON format (uses default thresholds: gofunclen=50, crap=6.0)
-	report, exitCode := runAllJSON(t)
-
-	if hasViolation(report.Crap.Violations, "chdirTemp") {
-		t.Errorf("expected chdirTemp not to be reported in crap section, but found it")
-	}
-
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 (clean), got %d", exitCode)
-	}
-}
-
 func TestRun_CppFunclenReportsViolation(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -832,7 +766,7 @@ func TestRun_AllIncludesFilelen(t *testing.T) {
 
 	output := stdoutBuf.String()
 
-	// Should include [filelen] output alongside [gofunclen] and [crap]
+	// Should include [filelen] output alongside [gofunclen]
 	if !strings.Contains(output, "[filelen]") {
 		t.Errorf("expected output to contain '[filelen]', got:\n%s", output)
 	}

@@ -64,9 +64,6 @@ type allReport struct {
 	Gofunclen struct {
 		Violations []funcViolation `json:"violations"`
 	} `json:"gofunclen"`
-	Crap struct {
-		Violations []funcViolation `json:"violations"`
-	} `json:"crap"`
 }
 
 // runAllJSON runs "go all --format=json ." against the current directory and parses the report.
@@ -534,16 +531,12 @@ func CleanFunc() {
 }
 `
 
-// writeAllCheckFixtures writes source files into dir that produce the requested
-// combination of gofunclen/crap violations for the "all" subcommand.
-func writeAllCheckFixtures(t *testing.T, dir string, gofunclenViolating, crapViolating bool) {
+// writeAllCheckFixtures writes source files into dir that produce the requested violations for the "all" subcommand.
+func writeAllCheckFixtures(t *testing.T, dir string, gofunclenViolating bool) {
 	if gofunclenViolating {
 		writeGoFile(t, dir, "long.go", longFuncSrc("main", "LongFunc", 105))
 	}
-	if crapViolating {
-		writeGoFile(t, dir, "complex.go", complexFuncSrc)
-	}
-	if !gofunclenViolating && !crapViolating {
+	if !gofunclenViolating {
 		writeGoFile(t, dir, "clean.go", cleanFuncSrc)
 	}
 }
@@ -561,7 +554,7 @@ func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			writeAllCheckFixtures(t, tmpDir, tc.gofunclenViolating, false)
+			writeAllCheckFixtures(t, tmpDir, tc.gofunclenViolating)
 			initModule(t, tmpDir)
 
 			var stdoutBuf, stderrBuf bytes.Buffer
