@@ -7,29 +7,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"boy-scout/internal/assertutil"
 )
 
 //go:embed SKILL.md references/*
 var skillContent embed.FS
 
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
-
 func assertNoMachineLocalPath(name string, content []byte) {
 	contentStr := string(content)
-	assertf(!strings.Contains(contentStr, "/Users/"), "embedded %s references a machine-local path; violation explanations must be self-contained", name)
-	assertf(!strings.Contains(contentStr, "~/workspace"), "embedded %s references a machine-local path; violation explanations must be self-contained", name)
+	assertutil.Assertf(!strings.Contains(contentStr, "/Users/"), "embedded %s references a machine-local path; violation explanations must be self-contained", name)
+	assertutil.Assertf(!strings.Contains(contentStr, "~/workspace"), "embedded %s references a machine-local path; violation explanations must be self-contained", name)
 }
 
 // validateEmbeddedContent checks embedded SKILL.md is valid and non-empty.
 func validateEmbeddedContent(content []byte) {
-	assertf(len(content) > 0, "embedded SKILL.md is empty")
+	assertutil.Assertf(len(content) > 0, "embedded SKILL.md is empty")
 	assertNoMachineLocalPath("SKILL.md", content)
-	assertf(!strings.Contains(string(content), "gardener"), "embedded SKILL.md still references old tool name 'gardener'")
-	assertf(!strings.Contains(string(content), "go test ./..."), "embedded SKILL.md must not hardcode a language-specific test command; belongs in references/lang/{lang}/index.md")
+	assertutil.Assertf(!strings.Contains(string(content), "gardener"), "embedded SKILL.md still references old tool name 'gardener'")
+	assertutil.Assertf(!strings.Contains(string(content), "go test ./..."), "embedded SKILL.md must not hardcode a language-specific test command; belongs in references/lang/{lang}/index.md")
 }
 
 // Run creates a skill file at baseDir/{prefix}/skills/boy-scout/SKILL.md and copies
@@ -37,7 +33,7 @@ func validateEmbeddedContent(content []byte) {
 // It also writes reference files to baseDir/{prefix}/skills/boy-scout/references/.
 // It returns the path to the written skill file.
 func Run(baseDir string, binaryPath string, prefix string) (string, error) {
-	assertf(prefix != "", "prefix must not be empty")
+	assertutil.Assertf(prefix != "", "prefix must not be empty")
 
 	// Read the embedded SKILL.md template
 	content, err := skillContent.ReadFile("SKILL.md")
@@ -69,7 +65,7 @@ func Run(baseDir string, binaryPath string, prefix string) (string, error) {
 		return "", err
 	}
 
-	assertf(strings.HasSuffix(skillPath, filepath.Join(prefix, "skills", "boy-scout", "SKILL.md")), "unexpected skill path: %s", skillPath)
+	assertutil.Assertf(strings.HasSuffix(skillPath, filepath.Join(prefix, "skills", "boy-scout", "SKILL.md")), "unexpected skill path: %s", skillPath)
 
 	return skillPath, nil
 }
@@ -148,7 +144,7 @@ func writeReferenceFile(srcPath, dstPath, name string) error {
 		return fmt.Errorf("failed to read file %s: %w", srcPath, err)
 	}
 
-	assertf(len(content) > 0, "embedded reference file %s is empty", name)
+	assertutil.Assertf(len(content) > 0, "embedded reference file %s is empty", name)
 	assertNoMachineLocalPath(name, content)
 
 	if err := os.WriteFile(dstPath, content, 0644); err != nil {

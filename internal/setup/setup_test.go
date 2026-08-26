@@ -99,8 +99,8 @@ func TestRun_TemplateDeclaresUserInvokedFixLoop(t *testing.T) {
 	if !strings.Contains(contentStr, "boy-scout go all") {
 		t.Errorf("expected 'boy-scout go all' in skill body, got:\n%s", contentStr)
 	}
-	if !strings.Contains(contentStr, "go test") {
-		t.Errorf("expected 'go test' in skill body, got:\n%s", contentStr)
+	if !strings.Contains(contentStr, "Run your project's test suite once") {
+		t.Errorf("expected a test-suite-green instruction in skill body, got:\n%s", contentStr)
 	}
 }
 
@@ -259,7 +259,7 @@ func TestRun_WritesAllReferenceFiles(t *testing.T) {
 	}
 
 	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
-	referenceFiles := []string{"funclen.md", "crap.md", "filelen.md", "instability.md", "abstractness.md"}
+	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md", "instability.md", "abstractness.md"}
 
 	for _, filename := range referenceFiles {
 		path := filepath.Join(refDir, filename)
@@ -286,7 +286,7 @@ func TestRun_ReferenceFilesExplainWhyAndHow(t *testing.T) {
 		howMarker string
 	}{
 		{"Funclen", "funclen.md", "one level of abstraction", "table of contents"},
-		{"Crap", "crap.md", "high complexity plus low test coverage", "characterization test"},
+		{"Complexity", "complexity.md", "too many independent paths", "each branch"},
 		{"Filelen", "filelen.md", "mixing multiple concerns", "high cohesion"},
 		{"Instability", "instability.md", "least-stable thing it leans on", "Point the dependency the other way"},
 		{"Abstractness", "abstractness.md", "Zone of Pain", "deep module"},
@@ -319,7 +319,7 @@ func TestRun_ReferenceFilesHaveNoMachineLocalPath(t *testing.T) {
 	}
 
 	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
-	referenceFiles := []string{"funclen.md", "crap.md", "filelen.md", "instability.md", "abstractness.md"}
+	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md", "instability.md", "abstractness.md"}
 
 	for _, filename := range referenceFiles {
 		content, err := os.ReadFile(filepath.Join(refDir, filename))
@@ -354,7 +354,7 @@ func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
 	// Check that all 5 reference files are mentioned in the table
 	referenceFiles := []string{
 		"references/funclen.md",
-		"references/crap.md",
+		"references/complexity.md",
 		"references/filelen.md",
 		"references/instability.md",
 		"references/abstractness.md",
@@ -367,7 +367,7 @@ func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
 	}
 
 	// Check fix-order statement
-	if !strings.Contains(contentStr, "funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, instability, abstractness, cross-package duplication") {
 		t.Errorf("expected skill template to contain fix-order statement with all violation kinds, got:\n%s", contentStr)
 	}
 }
@@ -543,7 +543,7 @@ func TestRun_TemplateOrdersDuplicationBySamePackageVsCrossPackage(t *testing.T) 
 	contentStr := string(content)
 
 	// Check that same-package duplication clusters are mentioned in early tier with funclen
-	if !strings.Contains(contentStr, "funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, instability, abstractness, cross-package duplication") {
 		t.Errorf("expected skill template to mention violation fix order with same-package before cross-package duplication, got:\n%s", contentStr)
 	}
 }

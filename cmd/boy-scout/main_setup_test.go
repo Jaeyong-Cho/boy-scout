@@ -997,7 +997,7 @@ func TestRun_SetupWritesReferenceFiles(t *testing.T) {
 
 	// Verify all 5 reference files exist
 	refDir := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references")
-	referenceFiles := []string{"funclen.md", "crap.md", "filelen.md", "instability.md", "abstractness.md"}
+	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md", "instability.md", "abstractness.md"}
 
 	for _, filename := range referenceFiles {
 		path := filepath.Join(refDir, filename)

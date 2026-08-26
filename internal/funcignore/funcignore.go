@@ -1,17 +1,12 @@
 package funcignore
 
 import (
-	"fmt"
 	"go/ast"
 	"path"
 	"strings"
-)
 
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
+	"boy-scout/internal/assertutil"
+)
 
 // Reason checks whether a function should be excluded for the given checker,
 // based on name-pattern flags or a `// boy-scout:ignore[:checker[,checker...]]`
@@ -19,7 +14,7 @@ func assertf(cond bool, format string, args ...any) {
 // "flag", "comment", or "" (not excluded). checker is the calling checker's
 // own CLI subcommand name (e.g. "funclen", "crap").
 func Reason(fn *ast.FuncDecl, patterns []string, checker string) (bool, string) {
-	assertf(checker != "", "funcignore.Reason called with empty checker name")
+	assertutil.Assertf(checker != "", "funcignore.Reason called with empty checker name")
 
 	for _, p := range patterns {
 		if match, _ := path.Match(p, fn.Name.Name); match {

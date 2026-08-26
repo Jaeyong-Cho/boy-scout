@@ -48,16 +48,16 @@ For mixed-language projects, merge all violations from each language into a sing
 
 ## Selecting Candidates
 
-Review violations in order of disruption (least to most): funclen, same-package duplication, crap, filelen, instability, abstractness, cross-package duplication.
+Review violations in order of disruption (least to most): funclen, same-package duplication, complexity, filelen, instability, abstractness, cross-package duplication.
 
-**Within each type, select one candidate per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), CRAP score (crap), summed DupLines (duplication), Gap (instability), Distance (abstractness). Test file violations (`*_test.go`, C++ tests) go last. This produces at most one candidate per type — never select more than one, and never edit anything in this step.
+**Within each type, select one candidate per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), complexity score (complexity), summed DupLines (duplication), Gap (instability), Distance (abstractness). Test file violations (`*_test.go`, C++ tests) go last. This produces at most one candidate per type — never select more than one, and never edit anything in this step.
 
 Before showing a candidate, read: language-agnostic reference (`references/{violation-type}.md`) and language-specific example (`references/lang/{go|cpp}/{violation-type}.md`).
 
 | Violation kind | Why/How | Go Example | C++ Example |
 |---|---|---|---|
 | `funclen` (or `gofunclen` in Go) | `references/funclen.md` | `references/lang/go/funclen.md` | `references/lang/cpp/funclen.md` |
-| `crap` | `references/crap.md` | `references/lang/go/crap.md` | (not yet supported for C++) |
+| `complexity` | `references/complexity.md` | `references/lang/go/complexity.md` | (not yet supported for C++) |
 | `filelen` | `references/filelen.md` | `references/lang/go/filelen.md` | `references/lang/cpp/filelen.md` |
 | `duplication` | `references/duplication.md` | `references/lang/go/duplication.md` | (not yet supported for C++) |
 | `instability` | `references/instability.md` | `references/lang/go/instability.md` | `references/lang/cpp/instability.md` |
@@ -67,8 +67,6 @@ Each "Why/How" file explains the concept and fix strategy generically. Each lang
 
 ## Special Rules by Violation Kind
 
-**CRAP violations in Go test files:** CRAP violations never appear for `_test.go` files by default (no flag needed) — the coverage formula is meaningless for test code by construction, since `go test -coverprofile` never instruments test files. If a `crap` violation is ever reported in a test file, it's a tool bug to flag, not test code to refactor.
-
 **Duplication violations:** Run `--format=json` (not text output) to read the cluster's `members`, `pairs`, `dupLines`, and `crossPackage` fields — these are necessary to show which functions are duplicates of each other and how they're related. `references/duplication.md`'s "How to fix it" section covers the actual fix strategy for whoever runs @skills/to-plan next; this skill only needs the fields above to explain the candidate.
 
 ## Showing Each Candidate
@@ -76,8 +74,8 @@ Each "Why/How" file explains the concept and fix strategy generically. Each lang
 For each selected candidate, show:
 
 1. The file:line and the severity number boy-scout printed.
-2. The flagged code — read the actual function/file boy-scout pointed at and quote it (the whole function for funclen/crap, the relevant snippet for filelen/duplication/instability/abstractness).
-3. A one-paragraph *why*, using the matching reference file's "Why this is a problem" section, filled in with this candidate's real numbers (e.g. "complexity=8, coverage=75%" for a crap violation) — not a generic copy-paste.
+2. The flagged code — read the actual function/file boy-scout pointed at and quote it (the whole function for funclen/complexity, the relevant snippet for filelen/duplication/instability/abstractness).
+3. A one-paragraph *why*, using the matching reference file's "Why this is a problem" section, filled in with this candidate's real numbers (e.g. "complexity=12, limit=10" for a complexity violation) — not a generic copy-paste.
 4. A one-line *fix strategy* pointer, quoting the first sentence of the matching reference file's "How to fix it" section.
 
 **Never edit or write to any file in this step.** Reading a flagged file to quote its code is fine; writing to it is not.
@@ -90,7 +88,7 @@ For each selected candidate, show:
   ```
   Found N violation(s) to review:
 
-  1. [crap] internal/duplication/duplication.go:454 — sortClustersByDupLines, CRAP 9.00
+  1. [complexity] internal/duplication/duplication.go:454 — sortClustersByDupLines, complexity=13 (limit 10)
      <quoted code>
      Why: ...
      Fix strategy: ...
@@ -111,12 +109,12 @@ Once the user answers which candidate(s) they want fixed:
 Example shape:
 
 ```
-Fix Plan — #1 [crap] internal/duplication/duplication.go:454 sortClustersByDupLines
+Fix Plan — #1 [complexity] internal/duplication/duplication.go:454 sortClustersByDupLines
 
 1. Extract the `if dup.CrossPackage` branch (lines 460-468) into `classifyDuplicate(dup) string`.
 2. Extract the sort comparator (lines 470-478) into `byDupLinesDesc(a, b Duplicate) bool`.
 3. Replace the two extracted blocks in `sortClustersByDupLines` with calls to the new functions.
-4. Re-run `go test ./internal/duplication/...` to confirm CRAP drops below 6.00.
+4. Re-run `boy-scout go complexity ./internal/duplication/...` to confirm complexity drops below 10.
 
 Run @skills/to-plan on this pick to draft the real plan, then @skills/do-plan to execute it.
 ```

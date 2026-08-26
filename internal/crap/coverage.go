@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"boy-scout/internal/assertutil"
 )
 
 type profileBlock struct {
@@ -85,12 +87,12 @@ func parseProfileLine(line string, lineNum int) (profileBlock, error) {
 }
 
 // functionCoverage calculates the fraction of statements executed in a function.
-// - If fileInProfile is false, the file is not in the coverage profile at all,
-//   so coverage is 0%.
-// - If fileInProfile is true but there are no matching blocks in the range,
-//   and the sum of numStmt is 0, the function is vacuously 100% covered
-//   (no statements to miss).
-// - Otherwise, coverage is (statements executed) / (total statements).
+//   - If fileInProfile is false, the file is not in the coverage profile at all,
+//     so coverage is 0%.
+//   - If fileInProfile is true but there are no matching blocks in the range,
+//     and the sum of numStmt is 0, the function is vacuously 100% covered
+//     (no statements to miss).
+//   - Otherwise, coverage is (statements executed) / (total statements).
 func functionCoverage(blocks []profileBlock, fileInProfile bool, startLine, endLine int) float64 {
 	if !fileInProfile {
 		return 0.0
@@ -122,7 +124,7 @@ func sumOverlapping(blocks []profileBlock, startLine, endLine int) (totalStmt, c
 }
 
 func assertCoverageInRange(cov float64) {
-	assertf(cov >= 0 && cov <= 1, "coverage fraction out of range: %f", cov)
+	assertutil.Assertf(cov >= 0 && cov <= 1, "coverage fraction out of range: %f", cov)
 }
 
 // testTargets converts a list of paths to go test package patterns.

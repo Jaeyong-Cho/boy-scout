@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/setup"
 )
 
@@ -125,7 +126,7 @@ func resolveTarget(positional []string, stdin io.Reader, interactive bool, stdou
 			return "", "", err
 		}
 		prefix, ok := lookupSetupTarget(targetName)
-		assertf(ok, "promptForTarget returned unknown target %q", targetName)
+		assertutil.Assertf(ok, "promptForTarget returned unknown target %q", targetName)
 		return targetName, prefix, nil
 	}
 
@@ -189,7 +190,7 @@ func runSetup(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
-	assertf(baseDir != "", "baseDir must not be empty")
+	assertutil.Assertf(baseDir != "", "baseDir must not be empty")
 
 	// Resolve the target (either explicit or by prompting)
 	_, prefix, err := resolveTarget(positional, stdin, isInteractive(stdin), stdout)

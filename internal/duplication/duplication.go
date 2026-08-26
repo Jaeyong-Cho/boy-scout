@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/funcignore"
 	"boy-scout/internal/srcfiles"
 )
@@ -43,10 +44,10 @@ type FuncRef struct {
 }
 
 type Cluster struct {
-	Members     []FuncRef  `json:"members"`     // unique functions in the group, sorted by file then line
-	Pairs       []Violation `json:"pairs"`       // pairwise violations, each keeping its own Type
-	DupLines    int        `json:"dupLines"`    // sum of all Pairs[i].DupLines
-	CrossPackage bool       `json:"crossPackage"` // true when members span different directories
+	Members      []FuncRef   `json:"members"`      // unique functions in the group, sorted by file then line
+	Pairs        []Violation `json:"pairs"`        // pairwise violations, each keeping its own Type
+	DupLines     int         `json:"dupLines"`     // sum of all Pairs[i].DupLines
+	CrossPackage bool        `json:"crossPackage"` // true when members span different directories
 }
 
 // SkippedFile is a type alias for srcfiles.SkippedFile
@@ -73,19 +74,13 @@ type Report struct {
 	ExcludedFuncs []ExcludedFunc
 }
 
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
-
 // FuncInfo holds parsed function metadata for comparison
 type FuncInfo struct {
-	File         string
-	Line         int
-	Func         *ast.FuncDecl
-	Fset         *token.FileSet // FileSet needed for accurate line calculations
-	RawSequence  []string
+	File          string
+	Line          int
+	Func          *ast.FuncDecl
+	Fset          *token.FileSet // FileSet needed for accurate line calculations
+	RawSequence   []string
 	BlindSequence []string
 }
 
@@ -302,7 +297,7 @@ func max(a, b int) int {
 }
 
 func lcsSimilarity(a, b []string) float64 {
-	assertf(len(a) > 0 || len(b) > 0, "lcsSimilarity called with two empty sequences")
+	assertutil.Assertf(len(a) > 0 || len(b) > 0, "lcsSimilarity called with two empty sequences")
 
 	if len(a) == 0 || len(b) == 0 {
 		return 0.0
@@ -313,7 +308,7 @@ func lcsSimilarity(a, b []string) float64 {
 	lcsLength := computeLCSLength(a, b, dp)
 	ratio := float64(2*lcsLength) / float64(m+n)
 
-	assertf(ratio >= 0.0 && ratio <= 1.0, "similarity ratio %f out of [0,1] range", ratio)
+	assertutil.Assertf(ratio >= 0.0 && ratio <= 1.0, "similarity ratio %f out of [0,1] range", ratio)
 
 	return ratio
 }
@@ -471,7 +466,7 @@ func buildClusters(violations []Violation) []Cluster {
 	}
 
 	uf := newUnionFind()
-	funcMap := make(map[string]FuncRef)  // key: file:line:func, value: FuncRef
+	funcMap := make(map[string]FuncRef)       // key: file:line:func, value: FuncRef
 	groupMembers := make(map[string][]string) // key: root, value: member keys
 
 	for _, v := range violations {
@@ -503,7 +498,7 @@ func buildCluster(root string, memberKeys []string, funcMap map[string]FuncRef, 
 	sortMembers(members)
 	clusterPairs := collectClusterPairs(violations, uf, root)
 	dupLines := totalDupLines(clusterPairs)
-	assertf(len(members) >= 2, "cluster %v has fewer than 2 members", root)
+	assertutil.Assertf(len(members) >= 2, "cluster %v has fewer than 2 members", root)
 	return Cluster{
 		Members:      members,
 		Pairs:        clusterPairs,
@@ -522,7 +517,7 @@ func reportDuplicates(allFuncs []FuncInfo, minSimilarity float64) []Violation {
 			b := &allFuncs[j]
 
 			// Assertion: never comparing a function against itself in unordered pairs
-			assertf(i != j, "comparing function against itself")
+			assertutil.Assertf(i != j, "comparing function against itself")
 
 			cloneType, similarity := classifyPair(a, b, minSimilarity)
 			if cloneType == "" {
@@ -565,7 +560,7 @@ func reportDuplicates(allFuncs []FuncInfo, minSimilarity float64) []Violation {
 
 // CheckWithSimilarity scans .go files and reports function duplicates with LCS-based similarity threshold
 func CheckWithSimilarity(paths []string, minLines int, minSimilarity float64, opts Options) (Report, error) {
-	assertf(minLines > 0, "minLines must be positive, got %d", minLines)
+	assertutil.Assertf(minLines > 0, "minLines must be positive, got %d", minLines)
 
 	nonTestFiles, report, err := collectAndFilterFiles(paths, opts)
 	if err != nil {

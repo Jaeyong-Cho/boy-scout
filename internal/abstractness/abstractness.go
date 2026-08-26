@@ -1,8 +1,7 @@
 package abstractness
 
 import (
-	"fmt"
-
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/instability"
 	"boy-scout/internal/srcfiles"
 )
@@ -32,12 +31,6 @@ type Report struct {
 	TotalPackages int
 }
 
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
-
 // Check analyzes the abstractness and instability of packages in the given paths.
 func Check(paths []string, minDistance float64, opts Options) (Report, error) {
 	return CheckWithSurfaceRatio(paths, minDistance, 0.5, opts)
@@ -45,8 +38,8 @@ func Check(paths []string, minDistance float64, opts Options) (Report, error) {
 
 // CheckWithSurfaceRatio analyzes abstractness/instability and gates Pain candidates by SurfaceRatio.
 func CheckWithSurfaceRatio(paths []string, minDistance float64, minSurfaceRatio float64, opts Options) (Report, error) {
-	assertf(minDistance >= 0, "minDistance must be non-negative, got %f", minDistance)
-	assertf(minSurfaceRatio >= 0, "minSurfaceRatio must be non-negative, got %f", minSurfaceRatio)
+	assertutil.Assertf(minDistance >= 0, "minDistance must be non-negative, got %f", minDistance)
+	assertutil.Assertf(minSurfaceRatio >= 0, "minSurfaceRatio must be non-negative, got %f", minSurfaceRatio)
 
 	graph, err := instability.BuildGraph(paths, instability.Options{
 		ExcludeFiles: opts.ExcludeFiles,
@@ -108,7 +101,7 @@ func diagnosePackage(importPath string, pkgStats instability.PackageStats, minDi
 func computeAbstractness(interfaces, structs int) float64 {
 	total := interfaces + structs
 	if total == 0 {
-		assertf(total == 0, "zero exported types implies A = 0, no division")
+		assertutil.Assertf(total == 0, "zero exported types implies A = 0, no division")
 		return 0.0
 	}
 	return float64(interfaces) / float64(total)
@@ -127,7 +120,7 @@ func absFloat64(x float64) float64 {
 func determineZone(signedD, minDistance, minSurfaceRatio float64, ignoreDeepModuleGate bool, files []string) (string, float64, bool) {
 	isPain := signedD < -minDistance
 	isUselessness := signedD > minDistance
-	assertf(!(isPain && isUselessness), "package cannot be both Pain and Uselessness")
+	assertutil.Assertf(!(isPain && isUselessness), "package cannot be both Pain and Uselessness")
 
 	if isPain {
 		ratio, _ := surfaceRatio(files)

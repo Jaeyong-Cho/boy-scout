@@ -5,13 +5,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-)
 
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
+	"boy-scout/internal/assertutil"
+)
 
 // bumpType represents a semantic version bump priority: patch < minor < major.
 type bumpType int
@@ -74,7 +70,7 @@ func applyBump(major, minor, patch int, bump bumpType) string {
 		bump = bumpMinor
 	}
 
-	assertf(major > 0 || bump != bumpMajor, "applyBump: major=0 must never have bump=bumpMajor")
+	assertutil.Assertf(major > 0 || bump != bumpMajor, "applyBump: major=0 must never have bump=bumpMajor")
 
 	major, minor, patch = applyBumpIncrement(major, minor, patch, bump)
 	return fmt.Sprintf("v%d.%d.%d", major, minor, patch)
@@ -118,7 +114,7 @@ func parseTag(tag string) (major, minor, patch int) {
 	patch, _ = strconv.Atoi(matches[3])
 
 	// Assert that parsed values are non-negative (they should be from regex).
-	assertf(major >= 0 && minor >= 0 && patch >= 0,
+	assertutil.Assertf(major >= 0 && minor >= 0 && patch >= 0,
 		"parseTag: parsed non-negative integers from %s", tag)
 
 	return major, minor, patch

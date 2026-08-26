@@ -1,11 +1,11 @@
 package gofunclen
 
 import (
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/funcignore"
 	"boy-scout/internal/srcfiles"
 )
@@ -36,16 +36,10 @@ type Options struct {
 }
 
 type Report struct {
-	Violations   []Violation
-	Skipped      []SkippedFile
+	Violations    []Violation
+	Skipped       []SkippedFile
 	ExcludedFiles []string
 	ExcludedFuncs []ExcludedFunc
-}
-
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
 }
 
 // evalFuncLen checks a single function's length, or reports why it was excluded.
@@ -67,7 +61,7 @@ func evalFuncLen(fn *ast.FuncDecl, fset *token.FileSet, filePath string, maxLine
 		return nil, nil
 	}
 
-	assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
+	assertutil.Assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
 	return &Violation{File: filePath, Line: startLine, Func: fn.Name.Name, Length: length, Limit: maxLines}, nil
 }
 
@@ -105,7 +99,7 @@ func appendEvalResult(violations []Violation, excludedFuncs []ExcludedFunc, viol
 }
 
 func Check(paths []string, maxLines int, opts Options) (Report, error) {
-	assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
+	assertutil.Assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
 
 	report := Report{
 		Violations:    []Violation{},

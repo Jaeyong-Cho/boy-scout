@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
+
+	"boy-scout/internal/assertutil"
 )
 
 // isFunctionLikeDeclaration checks if node is a function/generator/method declaration
@@ -45,13 +47,13 @@ func findChildByTypes(node *sitter.Node, types ...string) *sitter.Node {
 // extractFunctionDef extracts function name and body span from function_declaration, generator_function_declaration, or method_definition
 func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
 	nodeType := node.Type()
-	assertf(nodeType == "function_declaration" || nodeType == "generator_function_declaration" || nodeType == "method_definition",
+	assertutil.Assertf(nodeType == "function_declaration" || nodeType == "generator_function_declaration" || nodeType == "method_definition",
 		"extractFunctionDef called on non-function node: %s", nodeType)
 
 	bodyNode := findChildByTypes(node, "statement_block")
 	nameNode := findChildByTypes(node, "identifier", "property_identifier")
 
-	assertf(bodyNode != nil, "function-like node without statement_block (body): %s", nodeType)
+	assertutil.Assertf(bodyNode != nil, "function-like node without statement_block (body): %s", nodeType)
 
 	name := "?"
 	if nameNode != nil {
@@ -70,10 +72,10 @@ func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
 
 // extractArrowFunctionDef extracts name and body from a named arrow function
 func extractArrowFunctionDef(node *sitter.Node, source []byte) *funcDef {
-	assertf(node.Type() == "arrow_function", "extractArrowFunctionDef called on non-arrow_function: %s", node.Type())
+	assertutil.Assertf(node.Type() == "arrow_function", "extractArrowFunctionDef called on non-arrow_function: %s", node.Type())
 
 	parent := node.Parent()
-	assertf(parent != nil && parent.Type() == "variable_declarator", "arrow_function not directly parented by variable_declarator")
+	assertutil.Assertf(parent != nil && parent.Type() == "variable_declarator", "arrow_function not directly parented by variable_declarator")
 
 	// Get name from the variable_declarator's first child (identifier)
 	var nameNode *sitter.Node
@@ -95,7 +97,7 @@ func extractArrowFunctionDef(node *sitter.Node, source []byte) *funcDef {
 		}
 	}
 
-	assertf(bodyNode != nil, "arrow_function without statement_block (body)")
+	assertutil.Assertf(bodyNode != nil, "arrow_function without statement_block (body)")
 
 	name := "?"
 	if nameNode != nil {

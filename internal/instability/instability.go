@@ -1,8 +1,7 @@
 package instability
 
 import (
-	"fmt"
-
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/srcfiles"
 )
 
@@ -25,10 +24,10 @@ type Options struct {
 }
 
 type Report struct {
-	Violations           []Violation
-	Skipped              []SkippedFile
-	TotalEdges           int
-	ViolationRate        float64 // (# edges with Gap > 0) / total edges
+	Violations            []Violation
+	Skipped               []SkippedFile
+	TotalEdges            int
+	ViolationRate         float64 // (# edges with Gap > 0) / total edges
 	WeightedViolationRate float64 // (sum of max(0, Gap) over all edges) / total edges
 }
 
@@ -61,14 +60,8 @@ type Graph struct {
 	Skipped    []SkippedFile
 }
 
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
-
 func Check(paths []string, minGap float64, opts Options) (Report, error) {
-	assertf(minGap >= 0, "minGap must be non-negative, got %f", minGap)
+	assertutil.Assertf(minGap >= 0, "minGap must be non-negative, got %f", minGap)
 
 	graph, err := BuildGraph(paths, opts)
 	if err != nil {
@@ -102,7 +95,7 @@ func ComputeViolations(graph Graph, minGap float64) ([]Violation, float64) {
 		}
 
 		if gap > minGap {
-			assertf(gap > minGap, "appended violation has Gap > minGap")
+			assertutil.Assertf(gap > minGap, "appended violation has Gap > minGap")
 			violations = append(violations, Violation{
 				Source: e.Source,
 				Target: e.Target,
