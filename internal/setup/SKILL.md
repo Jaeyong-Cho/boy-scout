@@ -1,12 +1,12 @@
 ---
 name: boy-scout
-description: List code quality violations from the boy-scout lint checker, with code and reasoning; once the user picks which to fix, propose a fix plan for review, then stop — the user drives the actual change via @skills/do-plan
+description: List code quality violations from the boy-scout lint checker, with code and reasoning; once the user picks which to fix, propose a fix plan, get confirmation, then apply the fix
 disable-model-invocation: true
 ---
 
 # boy-scout
 
-List code quality violations from the boy-scout lint checker — show each candidate's code and the reason it's flagged. Once you pick which to fix, it proposes a fix plan for each pick so you can review the approach, then stops. This skill never edits or commits a file; you drive the actual change through @skills/do-plan.
+List code quality violations from the boy-scout lint checker — show each candidate's code and the reason it's flagged. Once you pick which to fix, it proposes a fix plan for each pick; once you confirm, it applies the fix directly.
 
 ## Discover Your Project's Language
 
@@ -67,7 +67,7 @@ Each "Why/How" file explains the concept and fix strategy generically. Each lang
 
 ## Special Rules by Violation Kind
 
-**Duplication violations:** Run `--format=json` (not text output) to read the cluster's `members`, `pairs`, `dupLines`, and `crossPackage` fields — these are necessary to show which functions are duplicates of each other and how they're related. `references/duplication.md`'s "How to fix it" section covers the actual fix strategy for whoever runs @skills/do-plan next; this skill only needs the fields above to explain the candidate.
+**Duplication violations:** Run `--format=json` (not text output) to read the cluster's `members`, `pairs`, `dupLines`, and `crossPackage` fields — these are necessary to show which functions are duplicates of each other and how they're related. `references/duplication.md`'s "How to fix it" section covers the actual fix strategy applied once confirmed; this skill only needs the fields above to explain the candidate.
 
 ## Showing Each Candidate
 
@@ -104,7 +104,7 @@ Once the user answers which candidate(s) they want fixed:
 
 - If the answer doesn't match any listed candidate, say so and re-show the numbered list — never fabricate a fix plan for something that wasn't offered.
 - Otherwise, for each selected candidate, show one **Fix Plan** block: 2-5 ordered steps, each naming the exact file(s)/function(s)/package(s) it touches, expanded from the matching reference file's "How to fix it" section (the same file already read in Selecting Candidates). If more than one candidate was selected, show one Fix Plan block per candidate, in the order they were listed above.
-- This is a preview only — no code is written, no file is edited, nothing is drafted to disk in this step.
+- End with a confirmation question — do not apply anything yet.
 
 Example shape:
 
@@ -116,8 +116,17 @@ Fix Plan — #1 [complexity] internal/duplication/duplication.go:454 sortCluster
 3. Replace the two extracted blocks in `sortClustersByDupLines` with calls to the new functions.
 4. Re-run `boy-scout go complexity ./internal/duplication/...` to confirm complexity drops below 10.
 
-Run @skills/do-plan on this pick to execute it.
+Apply this plan?
 ```
 
-- Do not edit, refactor, or commit anything in this skill — the Fix Plan block above is a preview, not a change. `@skills/do-plan` owns the actual change from here.
+## Applying the Fix
+
+Once the user confirms a plan:
+
+1. Execute the plan's steps against the real files.
+2. Re-run the project's test suite; if it fails, fix the regression or revert the change and report why, don't leave the tree red.
+3. Re-run the boy-scout check for that violation type to confirm the flagged candidate no longer appears.
+4. Report what changed (files touched) and the before/after check result. Do not commit — leave the change staged/unstaged for the user to review and commit themselves.
+
+If the user didn't confirm (declined, or answered something else), don't apply anything — treat it like a fresh answer to "which one(s) do you want fixed?".
 
