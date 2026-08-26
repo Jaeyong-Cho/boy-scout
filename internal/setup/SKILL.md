@@ -1,12 +1,12 @@
 ---
 name: boy-scout
-description: List code quality violations from the boy-scout lint checker, with code and reasoning; once the user picks which to fix, propose a fix plan for review, then stop — the user drives the actual change via @skills/to-plan and @skills/do-plan
+description: List code quality violations from the boy-scout lint checker, with code and reasoning; once the user picks which to fix, propose a fix plan for review, then stop — the user drives the actual change via @skills/do-plan
 disable-model-invocation: true
 ---
 
 # boy-scout
 
-List code quality violations from the boy-scout lint checker — show each candidate's code and the reason it's flagged. Once you pick which to fix, it proposes a fix plan for each pick so you can review the approach, then stops. This skill never edits or commits a file; you drive the actual change through @skills/to-plan and @skills/do-plan.
+List code quality violations from the boy-scout lint checker — show each candidate's code and the reason it's flagged. Once you pick which to fix, it proposes a fix plan for each pick so you can review the approach, then stops. This skill never edits or commits a file; you drive the actual change through @skills/do-plan.
 
 ## Discover Your Project's Language
 
@@ -67,7 +67,7 @@ Each "Why/How" file explains the concept and fix strategy generically. Each lang
 
 ## Special Rules by Violation Kind
 
-**Duplication violations:** Run `--format=json` (not text output) to read the cluster's `members`, `pairs`, `dupLines`, and `crossPackage` fields — these are necessary to show which functions are duplicates of each other and how they're related. `references/duplication.md`'s "How to fix it" section covers the actual fix strategy for whoever runs @skills/to-plan next; this skill only needs the fields above to explain the candidate.
+**Duplication violations:** Run `--format=json` (not text output) to read the cluster's `members`, `pairs`, `dupLines`, and `crossPackage` fields — these are necessary to show which functions are duplicates of each other and how they're related. `references/duplication.md`'s "How to fix it" section covers the actual fix strategy for whoever runs @skills/do-plan next; this skill only needs the fields above to explain the candidate.
 
 ## Showing Each Candidate
 
@@ -116,8 +116,8 @@ Fix Plan — #1 [complexity] internal/duplication/duplication.go:454 sortCluster
 3. Replace the two extracted blocks in `sortClustersByDupLines` with calls to the new functions.
 4. Re-run `boy-scout go complexity ./internal/duplication/...` to confirm complexity drops below 10.
 
-Run @skills/to-plan on this pick to draft the real plan, then @skills/do-plan to execute it.
+Run @skills/do-plan on this pick to execute it.
 ```
 
-- Do not edit, refactor, or commit anything in this skill — the Fix Plan block above is a preview, not a change. `@skills/to-plan` and `@skills/do-plan` own the actual change from here.
+- Do not edit, refactor, or commit anything in this skill — the Fix Plan block above is a preview, not a change. `@skills/do-plan` owns the actual change from here.
 
