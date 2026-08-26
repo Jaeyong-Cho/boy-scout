@@ -13,9 +13,11 @@ boy-scout [flags] [paths...]
 ```
 
 Available checks:
-- **func-length**: Flag functions exceeding a configurable line limit (default: 50)
-- **file-length**: Flag files exceeding a configurable line limit
-- **crap-score**: Flag functions with high complexity and low test coverage
+- **gofunclen**: Flag Go functions exceeding a configurable line limit (default: 50)
+- **complexity**: Flag Go functions exceeding a configurable cyclomatic complexity limit (default: 10)
+- **filelen**: Flag files exceeding a configurable line limit
+- **crap**: Flag functions with high complexity and low test coverage
+- **duplication**: Flag duplicate code
 - **abstractness**: Architecture check for C++ (Zone of Pain/Uselessness detection)
 - **instability**: Architecture check for C++ (coupling-based instability)
 

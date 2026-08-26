@@ -9,6 +9,7 @@ import (
 	"boy-scout/internal/crap"
 	"boy-scout/internal/duplication"
 	"boy-scout/internal/filelen"
+	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
 	"boy-scout/internal/instability"
 )
@@ -79,6 +80,29 @@ var goFunclenCfg = CheckerConfig{
 	},
 	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
 		return renderText(report.(gofunclen.Report), stdout, stderr)
+	},
+}
+
+var goComplexityCfg = CheckerConfig{
+	Name: "complexity",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		maxComplexity := fs.Int("max-complexity", 10, "maximum cyclomatic complexity per function")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := gocomplexity.Options{
+					ExcludeFiles: excludeFiles,
+					ExcludeFuncs: excludeFuncs,
+					Debug:        debug,
+				}
+				return gocomplexity.Check(paths, *maxComplexity, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderComplexityJSON(report.(gocomplexity.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderComplexityText(report.(gocomplexity.Report), stdout, stderr)
 	},
 }
 
@@ -206,6 +230,10 @@ func runGoFunclen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goFunclenCfg, args, stdout, stderr)
 }
 
+func runGoComplexity(args []string, stdout, stderr io.Writer) int {
+	return runCheck(goComplexityCfg, args, stdout, stderr)
+}
+
 func runGoCrap(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goCrapCfg, args, stdout, stderr)
 }
@@ -240,7 +268,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	gofunclenReport, crapReport, filelenReport, duplicationReport, instabilityReport, abstractnessReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	gofunclenReport, complexityReport, crapReport, filelenReport, duplicationReport, instabilityReport, abstractnessReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		reportError(err, stderr)
 		return 2
@@ -248,6 +276,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 
 	combined := combinedReport{
 		Gofunclen:    gofunclenReport,
+		Complexity:   complexityReport,
 		Crap:         crapReport,
 		Filelen:      filelenReport,
 		Duplication:  duplicationReport,
@@ -263,9 +292,10 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 }
 
 // checkAll runs all checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, crap.Report, filelen.Report, duplication.Report, instability.Report, abstractness.Report, error) {
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, gocomplexity.Report, crap.Report, filelen.Report, duplication.Report, instability.Report, abstractness.Report, error) {
 	var (
 		gofunclenReport   gofunclen.Report
+		complexityReport  gocomplexity.Report
 		crapReport        crap.Report
 		filelenReport     filelen.Report
 		duplicationReport duplication.Report
@@ -277,6 +307,11 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 		func() error {
 			var err error
 			gofunclenReport, err = checkAllGofunclen(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			complexityReport, err = checkAllComplexity(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 		func() error {
@@ -308,11 +343,11 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return gofunclenReport, crapReport, filelenReport, duplicationReport, instabilityReport, abstractnessReport, err
+			return gofunclenReport, complexityReport, crapReport, filelenReport, duplicationReport, instabilityReport, abstractnessReport, err
 		}
 	}
 
-	return gofunclenReport, crapReport, filelenReport, duplicationReport, instabilityReport, abstractnessReport, nil
+	return gofunclenReport, complexityReport, crapReport, filelenReport, duplicationReport, instabilityReport, abstractnessReport, nil
 }
 
 func checkAllGofunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, error) {
@@ -322,6 +357,16 @@ func checkAllGofunclen(paths []string, excludeFiles, excludeFuncs []string, debu
 		Debug:        debug,
 	}
 	return gofunclen.Check(paths, 50, opts)
+}
+
+func checkAllComplexity(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gocomplexity.Report, error) {
+	opts := gocomplexity.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        debug,
+	}
+	// ponytail: same default (10) in standalone and `all` mode, unlike crap's 30-vs-6 split — split it if a stricter `all` default turns out to matter.
+	return gocomplexity.Check(paths, 10, opts)
 }
 
 func checkAllCrap(paths []string, excludeFiles, excludeFuncs []string, debug bool) (crap.Report, error) {
