@@ -15,6 +15,7 @@ import (
 	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
 	"boy-scout/internal/instability"
+	"boy-scout/internal/linelen"
 	"boy-scout/internal/tsfunclen"
 )
 
@@ -119,6 +120,29 @@ func renderFilelenJSON(report filelen.Report, stdout, stderr io.Writer) int {
 	return renderReportAsJSON(report, stdout, stderr)
 }
 
+// writeLinelenLines writes a linelen report's violations and excluded files to w,
+// each line prefixed with prefix (e.g. "[linelen] " when combined with other checks).
+func writeLinelenLines(w io.Writer, prefix string, report linelen.Report) {
+	writeLines(w, prefix, report.Violations, report.ExcludedFiles,
+		func(v linelen.Violation) string {
+			return fmt.Sprintf("%s:%d: %d chars (limit %d)",
+				v.File, v.Line, v.Length, v.Limit)
+		},
+		func(f string) string {
+			return fmt.Sprintf("excluded file: %s", f)
+		},
+	)
+}
+
+func renderLinelenText(report linelen.Report, stdout, stderr io.Writer) int {
+	writeLinelenLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderLinelenJSON(report linelen.Report, stdout, stderr io.Writer) int {
+	return renderReportAsJSON(report, stdout, stderr)
+}
+
 // writeDuplicationLines writes a duplication report's violations to w,
 // each line prefixed with prefix (e.g. "[duplication] " when combined with other checks).
 func writeDuplicationLines(w io.Writer, prefix string, report duplication.Report) {
@@ -213,6 +237,7 @@ type combinedReport struct {
 	Complexity   gocomplexity.Report `json:"complexity"`
 	Crap         crap.Report         `json:"crap"`
 	Filelen      filelen.Report      `json:"filelen"`
+	Linelen      linelen.Report      `json:"linelen"`
 	Duplication  duplication.Report  `json:"duplication"`
 	Instability  instability.Report  `json:"instability"`
 	Abstractness abstractness.Report `json:"abstractness"`
@@ -223,12 +248,13 @@ func renderAllText(report combinedReport, stdout, stderr io.Writer) int {
 	writeComplexityLines(stdout, "[complexity] ", report.Complexity)
 	writeCrapLines(stdout, "[crap] ", report.Crap)
 	writeFilelenLines(stdout, "[filelen] ", report.Filelen)
+	writeLinelenLines(stdout, "[linelen] ", report.Linelen)
 	writeDuplicationLines(stdout, "[duplication] ", report.Duplication)
 	writeInstabilityLines(stdout, "[instability] ", report.Instability)
 	writeAbstractnessLines(stdout, "[abstractness] ", report.Abstractness)
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations) + len(report.Duplication.Violations) + len(report.Instability.Violations) + len(report.Abstractness.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped) + len(report.Duplication.Skipped) + len(report.Instability.Skipped) + len(report.Abstractness.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations) + len(report.Duplication.Violations) + len(report.Instability.Violations) + len(report.Abstractness.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped) + len(report.Duplication.Skipped) + len(report.Instability.Skipped) + len(report.Abstractness.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -239,8 +265,8 @@ func renderAllJSON(report combinedReport, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "%s\n", string(data))
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations) + len(report.Duplication.Violations) + len(report.Instability.Violations) + len(report.Abstractness.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped) + len(report.Duplication.Skipped) + len(report.Instability.Skipped) + len(report.Abstractness.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Crap.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations) + len(report.Duplication.Violations) + len(report.Instability.Violations) + len(report.Abstractness.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Crap.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped) + len(report.Duplication.Skipped) + len(report.Instability.Skipped) + len(report.Abstractness.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }

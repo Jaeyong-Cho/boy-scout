@@ -81,6 +81,7 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 		"gofunclen":    runGoFunclen,
 		"complexity":   runGoComplexity,
 		"filelen":      runGoFilelen,
+		"linelen":      runGoLinelen,
 		"crap":         runGoCrap,
 		"duplication":  runGoDuplication,
 		"instability":  runGoInstability,
@@ -90,12 +91,14 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 	"cpp": {
 		"funclen":      runCppFunclen,
 		"filelen":      runCppFilelen,
+		"linelen":      runCppLinelen,
 		"instability":  runCppInstability,
 		"abstractness": runCppAbstractness,
 	},
 	"ts": {
 		"funclen": runTsFunclen,
 		"filelen": runTsFilelen,
+		"linelen": runTsLinelen,
 	},
 }
 

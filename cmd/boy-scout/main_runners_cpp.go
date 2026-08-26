@@ -10,6 +10,7 @@ import (
 	"boy-scout/internal/cppinstability"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/instability"
+	"boy-scout/internal/linelen"
 )
 
 // ============ C++ Checkers ============
@@ -33,6 +34,28 @@ var cppFilelenCfg = CheckerConfig{
 	},
 	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
 		return renderFilelenText(report.(filelen.Report), stdout, stderr)
+	},
+}
+
+var cppLinelenCfg = CheckerConfig{
+	Name: "linelen",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		maxChars := fs.Int("max-chars", 100, "maximum line length in characters")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := linelen.Options{
+					ExcludeFiles: excludeFiles,
+					Debug:        debug,
+				}
+				return linelen.Check(paths, *maxChars, []string{".cpp", ".h", ".hpp"}, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderLinelenJSON(report.(linelen.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderLinelenText(report.(linelen.Report), stdout, stderr)
 	},
 }
 
@@ -106,6 +129,10 @@ var cppAbstractnessCfg = CheckerConfig{
 // Thin wrappers that dispatch to configs.
 func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppFilelenCfg, args, stdout, stderr)
+}
+
+func runCppLinelen(args []string, stdout, stderr io.Writer) int {
+	return runCheck(cppLinelenCfg, args, stdout, stderr)
 }
 
 func runCppFunclen(args []string, stdout, stderr io.Writer) int {
