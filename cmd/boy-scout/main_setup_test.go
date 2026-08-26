@@ -183,50 +183,6 @@ func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
 	}
 }
 
-func TestRun_CrapIgnoresTestFilesByDefaultOnCLI(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Write main.go with a trivial function
-	writeGoFile(t, tmpDir, "main.go", `package main
-func Add(a, b int) int {
-	return a + b
-}
-`)
-
-	// Write main_test.go with an untested, deeply-nested helper function
-	writeGoFile(t, tmpDir, "main_test.go", `package main
-import "testing"
-func TestAdd(t *testing.T) {
-	_ = Add(1, 2)
-}
-func chdirTemp() {
-	if true { if true { if true { if true { if true { } } } } }
-}
-`)
-
-	// Write go.mod
-	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	// Run crap with low threshold, no --exclude-file flag
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=1", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-
-	// Assert that chdirTemp from main_test.go is NOT in the output
-	if strings.Contains(output, "chdirTemp") {
-		t.Errorf("expected chdirTemp not to be reported, but found it in output:\n%s", output)
-	}
-
-	// Exit code should be 0 (no violations, since the only complex function is in excluded test file)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 (clean), got %d", exitCode)
-	}
-}
 
 func TestRun_AllCrapSectionIgnoresTestFilesByDefault(t *testing.T) {
 	tmpDir := t.TempDir()

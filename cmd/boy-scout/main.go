@@ -78,22 +78,17 @@ func excludePatternsFrom(excludeFile, excludeFunc string) (excludeFiles, exclude
 // langSubcommands maps each language to its subcommands.
 var langSubcommands = map[string]map[string]func(args []string, stdout, stderr io.Writer) int{
 	"go": {
-		"gofunclen":    runGoFunclen,
-		"complexity":   runGoComplexity,
-		"filelen":      runGoFilelen,
-		"linelen":      runGoLinelen,
-		"crap":         runGoCrap,
-		"duplication":  runGoDuplication,
-		"instability":  runGoInstability,
-		"abstractness": runGoAbstractness,
-		"all":          runGoAll,
+		"gofunclen":   runGoFunclen,
+		"complexity":  runGoComplexity,
+		"filelen":     runGoFilelen,
+		"linelen":     runGoLinelen,
+		"duplication": runGoDuplication,
+		"all":         runGoAll,
 	},
 	"cpp": {
-		"funclen":      runCppFunclen,
-		"filelen":      runCppFilelen,
-		"linelen":      runCppLinelen,
-		"instability":  runCppInstability,
-		"abstractness": runCppAbstractness,
+		"funclen": runCppFunclen,
+		"filelen": runCppFilelen,
+		"linelen": runCppLinelen,
 	},
 	"ts": {
 		"funclen": runTsFunclen,

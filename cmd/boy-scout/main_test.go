@@ -446,6 +446,34 @@ func TestRun_UnknownSubcommandForLangPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestRun_UnknownSubcommand_CrapInstabilityAbstractness(t *testing.T) {
+	tests := []struct {
+		args []string
+		lang string
+		cmd  string
+	}{
+		{[]string{"go", "crap", "."}, "go", "crap"},
+		{[]string{"cpp", "instability", "."}, "cpp", "instability"},
+		{[]string{"cpp", "abstractness", "."}, "cpp", "abstractness"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.lang+"_"+tt.cmd, func(t *testing.T) {
+			var stdoutBuf, stderrBuf bytes.Buffer
+			exitCode := run(tt.args, &stdoutBuf, &stderrBuf)
+
+			stderr := stderrBuf.String()
+			if !strings.Contains(stderr, "unknown subcommand") {
+				t.Errorf("expected 'unknown subcommand' in stderr, got:\n%s", stderr)
+			}
+
+			if exitCode != 2 {
+				t.Errorf("expected exit code 2, got %d", exitCode)
+			}
+		})
+	}
+}
+
 func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 	// Create a temp dir with a violating file
 	tmpDir := t.TempDir()
@@ -484,277 +512,6 @@ func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 	}
 }
 
-func TestRun_CrapRespectsThresholdFlag(t *testing.T) {
-	// Create a file with a complex untested function
-	src := `package main
-func ComplexFunc(x int) string {
-	if x > 10 {
-		if x > 20 {
-			return "big"
-		}
-		return "medium"
-	}
-	return "small"
-}
-`
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Initialize go module
-	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=2", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-	// Should show threshold=2.00 in output
-	if !strings.Contains(output, "threshold=2.00") {
-		t.Errorf("expected 'threshold=2.00' in output, got:\n%s", output)
-	}
-
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1 (violations), got %d", exitCode)
-	}
-}
-
-func TestRun_CrapTextFormatMatchesExpectedLine(t *testing.T) {
-	// Create a file with a complex untested function
-	src := `package main
-func ComplexFunc(x int) string {
-	if x > 10 {
-		if x > 20 {
-			return "big"
-		}
-		return "medium"
-	}
-	return "small"
-}
-`
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Initialize go module
-	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=1", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-	// Expected format: "file:line: function Name has CRAP score X.XX (complexity=C, coverage=P.P%, threshold=T.TT)"
-	if !strings.Contains(output, "function ComplexFunc has CRAP score") {
-		t.Errorf("expected 'function ComplexFunc has CRAP score' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "complexity=") {
-		t.Errorf("expected 'complexity=' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "coverage=") {
-		t.Errorf("expected 'coverage=' in output, got:\n%s", output)
-	}
-
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-// crapJSONResult mirrors the JSON schema produced by the crap subcommand's --format=json output.
-type crapJSONResult struct {
-	Violations []struct {
-		File       string  `json:"file"`
-		Line       int     `json:"line"`
-		Func       string  `json:"func"`
-		Complexity int     `json:"complexity"`
-		Coverage   float64 `json:"coverage"`
-		Score      float64 `json:"score"`
-		Threshold  float64 `json:"threshold"`
-	}
-	Skipped []struct {
-		File  string `json:"file"`
-		Error string `json:"error"`
-	}
-}
-
-func TestRun_CrapJSONFormatOutputsValidSchema(t *testing.T) {
-	// Create a file with a complex untested function
-	src := `package main
-func ComplexFunc(x int) string {
-	if x > 10 {
-		if x > 20 {
-			return "big"
-		}
-		return "medium"
-	}
-	return "small"
-}
-`
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "main.go", src)
-	initModule(t, tmpDir)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=1", "--format=json", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-
-	var result crapJSONResult
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
-		return
-	}
-
-	if len(result.Violations) == 0 {
-		t.Fatalf("expected at least 1 violation, got %d", len(result.Violations))
-	}
-
-	v := result.Violations[0]
-	if v.Func != "ComplexFunc" {
-		t.Errorf("expected func 'ComplexFunc', got '%s'", v.Func)
-	}
-	if v.Complexity <= 0 {
-		t.Errorf("expected positive complexity, got %d", v.Complexity)
-	}
-
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRun_CrapDefaultThresholdIs30(t *testing.T) {
-	// Create a borderline function: complexity 8, coverage ~70% => CRAP ≈ 9.7
-	// This should NOT violate with the new default (30.0)
-	// but WOULD violate with the old default (6.0)
-	src := `package main
-func BorderlineFunc(x int) string {
-	if x == 1 { return "a" }
-	if x == 2 { return "b" }
-	if x == 3 { return "c" }
-	if x == 4 { return "d" }
-	if x == 5 { return "e" }
-	if x == 6 { return "f" }
-	if x == 7 { return "g" }
-	if x == 8 { return "h" }
-	return "default"
-}
-`
-	testSrc := `package main
-import "testing"
-
-func TestBorderlineFunc(t *testing.T) {
-	cases := []struct {
-		x int
-		want string
-	}{
-		{1, "a"},
-		{2, "b"},
-		{3, "c"},
-		{4, "d"},
-		{5, "e"},
-		{6, "f"},
-		{7, "g"},
-	}
-	for _, tt := range cases {
-		got := BorderlineFunc(tt.x)
-		if got != tt.want {
-			t.Errorf("BorderlineFunc(%d) = %q, want %q", tt.x, got, tt.want)
-		}
-	}
-}
-`
-
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "main.go", src)
-	writeGoFile(t, tmpDir, "main_test.go", testSrc)
-	initModule(t, tmpDir)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	// Run with no --threshold flag; should use the new default (30.0)
-	exitCode := run([]string{"go", "crap", "--format=json", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-
-	var result crapJSONResult
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
-		return
-	}
-
-	// With new default (30.0), BorderlineFunc (CRAP ≈ 9.7) should NOT violate
-	for _, v := range result.Violations {
-		if v.Func == "BorderlineFunc" {
-			t.Errorf("BorderlineFunc should not violate at the new default threshold 30.0 (CRAP ≈ 9.7), but got violation with score %f", v.Score)
-		}
-	}
-
-	// Exit code should be 0 (no violations)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 (no violations with new default), got %d (output: %s)", exitCode, output)
-	}
-}
-
-func TestRun_AllCombinesGofunclenAndCrap(t *testing.T) {
-	// Create a file with both gofunclen and crap violations
-	src := `package main
-func ViolatingFunc() {
-`
-	// Add 105 lines to violate gofunclen
-	for i := 0; i < 103; i++ {
-		src += fmt.Sprintf("\t_ = %d\n", i)
-	}
-	src += `	if true {
-		if true {
-			if true {
-				_ = "a"
-			}
-		}
-	}
-}
-`
-
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Initialize go module
-	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "all", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-	// Should have both gofunclen and crap violations
-	if !strings.Contains(output, "[gofunclen]") {
-		t.Errorf("expected '[gofunclen]' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "[crap]") {
-		t.Errorf("expected '[crap]' in output, got:\n%s", output)
-	}
-
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
 
 const complexFuncSrc = `package main
 func ComplexFunc() {
@@ -795,19 +552,16 @@ func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
 	testCases := []struct {
 		name             string
 		gofunclenViolating bool
-		crapViolating    bool
 		expectedExitCode int
 	}{
-		{"both clean", false, false, 0},
-		{"only gofunclen violated", true, false, 1},
-		{"only crap violated", false, true, 1},
-		{"both violated", true, true, 1},
+		{"clean", false, 0},
+		{"gofunclen violated", true, 1},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			writeAllCheckFixtures(t, tmpDir, tc.gofunclenViolating, tc.crapViolating)
+			writeAllCheckFixtures(t, tmpDir, tc.gofunclenViolating, false)
 			initModule(t, tmpDir)
 
 			var stdoutBuf, stderrBuf bytes.Buffer
