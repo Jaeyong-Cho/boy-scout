@@ -1,13 +1,13 @@
 package cppfunclen
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
+	"boy-scout/internal/assertutil"
+	"boy-scout/internal/srcfiles"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/cpp"
-	"boy-scout/internal/srcfiles"
 )
 
 type Violation struct {
@@ -36,12 +36,6 @@ type Report struct {
 	Violations    []Violation
 	Skipped       []SkippedFile
 	ExcludedFuncs []ExcludedFunc
-}
-
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
 }
 
 // hasErrorNode recursively checks if any node in the tree is an ERROR node
@@ -82,14 +76,14 @@ func findFunctionDefinitions(node *sitter.Node, source []byte, results *[]funcDe
 }
 
 type funcDef struct {
-	name     string
+	name      string
 	startLine int
 	endLine   int
 }
 
 // extractFunctionDef extracts the function name and body span from a function_definition node
 func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
-	assertf(node.Type() == "function_definition", "extractFunctionDef called on non-function_definition node: %s", node.Type())
+	assertutil.Assertf(node.Type() == "function_definition", "extractFunctionDef called on non-function_definition node: %s", node.Type())
 
 	// Find the body (compound_statement child)
 	var bodyNode *sitter.Node
@@ -110,7 +104,7 @@ func extractFunctionDef(node *sitter.Node, source []byte) *funcDef {
 		return nil
 	}
 
-	assertf(bodyNode != nil, "function_definition node without compound_statement (body) field: %s", node.Type())
+	assertutil.Assertf(bodyNode != nil, "function_definition node without compound_statement (body) field: %s", node.Type())
 
 	// Extract function name
 	name := extractFunctionName(declaratorNode, source)
@@ -210,7 +204,7 @@ func scanFileForCppLength(filePath string, source []byte, maxLines int, opts Opt
 
 		// Check if length exceeds limit
 		if length > maxLines {
-			assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
+			assertutil.Assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
 			violations = append(violations, Violation{
 				File:   filePath,
 				Line:   fn.startLine,
@@ -230,7 +224,7 @@ func scanFileForCppLength(filePath string, source []byte, maxLines int, opts Opt
 // deferred to a future plan. Tree-sitter's C++ grammar comment-handling was never
 // verified, so we don't build on it here.
 func Check(paths []string, maxLines int, opts Options) (Report, error) {
-	assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
+	assertutil.Assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
 
 	report := Report{
 		Violations:    []Violation{},
@@ -253,8 +247,8 @@ func Check(paths []string, maxLines int, opts Options) (Report, error) {
 		violations, excludedFuncs, skippedFile := scanFileForCppLength(filePath, source, maxLines, opts)
 		if skippedFile != nil {
 			// Invariant: syntax error file must produce zero violations and excluded funcs from this file
-			assertf(len(violations) == 0, "syntax error file %s produced violations", filePath)
-			assertf(len(excludedFuncs) == 0, "syntax error file %s produced excluded funcs", filePath)
+			assertutil.Assertf(len(violations) == 0, "syntax error file %s produced violations", filePath)
+			assertutil.Assertf(len(excludedFuncs) == 0, "syntax error file %s produced excluded funcs", filePath)
 			report.Skipped = append(report.Skipped, *skippedFile)
 			continue
 		}

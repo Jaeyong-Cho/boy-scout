@@ -1,18 +1,13 @@
-package crap
+package gocomplexity
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
+
+	"boy-scout/internal/assertutil"
 )
 
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
-
-// cyclomaticComplexity calculates the McCabe cyclomatic complexity of a function.
+// CyclomaticComplexity calculates the McCabe cyclomatic complexity of a function.
 // It counts:
 // - Base complexity: 1
 // - *ast.IfStmt: +1 each
@@ -24,7 +19,7 @@ func assertf(cond bool, format string, args ...any) {
 //
 // Complexity is computed only at the top level of the function body,
 // so closures' branches count toward the enclosing function.
-func cyclomaticComplexity(fn *ast.FuncDecl) int {
+func CyclomaticComplexity(fn *ast.FuncDecl) int {
 	complexity := 1
 
 	if fn.Body == nil {
@@ -36,7 +31,7 @@ func cyclomaticComplexity(fn *ast.FuncDecl) int {
 		return true
 	})
 
-	assertf(complexity >= 1, "complexity must be >=1, got %d for func %s", complexity, fn.Name.Name)
+	assertutil.Assertf(complexity >= 1, "complexity must be >=1, got %d for func %s", complexity, fn.Name.Name)
 	return complexity
 }
 
@@ -44,7 +39,7 @@ func cyclomaticComplexity(fn *ast.FuncDecl) int {
 var logicalOps = map[token.Token]bool{token.LAND: true, token.LOR: true}
 
 // nodeComplexity returns the cyclomatic complexity contribution of a single AST node,
-// per the rules documented on cyclomaticComplexity.
+// per the rules documented on CyclomaticComplexity.
 func nodeComplexity(n ast.Node) int {
 	switch stmt := n.(type) {
 	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt:

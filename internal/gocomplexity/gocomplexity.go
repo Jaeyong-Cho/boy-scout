@@ -1,4 +1,4 @@
-package gofunclen
+package gocomplexity
 
 import (
 	"go/ast"
@@ -11,11 +11,11 @@ import (
 )
 
 type Violation struct {
-	File   string
-	Line   int
-	Func   string
-	Length int
-	Limit  int
+	File       string `json:"file"`
+	Line       int    `json:"line"`
+	Func       string `json:"func"`
+	Complexity int    `json:"complexity"`
+	Limit      int    `json:"limit"`
 }
 
 // SkippedFile is a type alias for srcfiles.SkippedFile, preserving the existing
@@ -23,10 +23,10 @@ type Violation struct {
 type SkippedFile = srcfiles.SkippedFile
 
 type ExcludedFunc struct {
-	File   string
-	Line   int
-	Func   string
-	Reason string
+	File   string `json:"file"`
+	Line   int    `json:"line"`
+	Func   string `json:"func"`
+	Reason string `json:"reason"`
 }
 
 type Options struct {
@@ -36,38 +36,36 @@ type Options struct {
 }
 
 type Report struct {
-	Violations    []Violation
-	Skipped       []SkippedFile
-	ExcludedFiles []string
-	ExcludedFuncs []ExcludedFunc
+	Violations    []Violation    `json:"violations"`
+	Skipped       []SkippedFile  `json:"skipped"`
+	ExcludedFiles []string       `json:"excludedFiles"`
+	ExcludedFuncs []ExcludedFunc `json:"excludedFuncs"`
 }
 
-// evalFuncLen checks a single function's length, or reports why it was excluded.
+// evalFuncComplexity checks a single function's complexity, or reports why it was excluded.
 // Exactly one of the two return values is non-nil.
-func evalFuncLen(fn *ast.FuncDecl, fset *token.FileSet, filePath string, maxLines int, opts Options) (*Violation, *ExcludedFunc) {
-	// Calculate function length: from opening { to closing }, inclusive
+func evalFuncComplexity(fn *ast.FuncDecl, fset *token.FileSet, filePath string, maxComplexity int, opts Options) (*Violation, *ExcludedFunc) {
 	startLine := fset.Position(fn.Body.Pos()).Line
-	endLine := fset.Position(fn.Body.End()).Line
-	length := endLine - startLine + 1
 
-	if excluded, reason := funcignore.Reason(fn, opts.ExcludeFuncs, "gofunclen"); excluded {
+	if excluded, reason := funcignore.Reason(fn, opts.ExcludeFuncs, "complexity"); excluded {
 		if !opts.Debug {
 			return nil, nil
 		}
 		return nil, &ExcludedFunc{File: filePath, Line: startLine, Func: fn.Name.Name, Reason: reason}
 	}
 
-	if length <= maxLines {
+	complexity := CyclomaticComplexity(fn)
+	if complexity <= maxComplexity {
 		return nil, nil
 	}
 
-	assertutil.Assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
-	return &Violation{File: filePath, Line: startLine, Func: fn.Name.Name, Length: length, Limit: maxLines}, nil
+	assertutil.Assertf(complexity > maxComplexity, "appended violation does not exceed limit %d", maxComplexity)
+	return &Violation{File: filePath, Line: startLine, Func: fn.Name.Name, Complexity: complexity, Limit: maxComplexity}, nil
 }
 
-// scanFileForLength parses filePath and evaluates the length of every non-excluded
+// scanFileForComplexity parses filePath and evaluates the complexity of every non-excluded
 // function in it. skipped is non-nil if the file itself couldn't be parsed.
-func scanFileForLength(filePath string, maxLines int, opts Options) (violations []Violation, excludedFuncs []ExcludedFunc, skipped *SkippedFile) {
+func scanFileForComplexity(filePath string, maxComplexity int, opts Options) (violations []Violation, excludedFuncs []ExcludedFunc, skipped *SkippedFile) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 	if err != nil {
@@ -80,7 +78,7 @@ func scanFileForLength(filePath string, maxLines int, opts Options) (violations 
 			continue
 		}
 
-		violation, excluded := evalFuncLen(fn, fset, filePath, maxLines, opts)
+		violation, excluded := evalFuncComplexity(fn, fset, filePath, maxComplexity, opts)
 		violations, excludedFuncs = appendEvalResult(violations, excludedFuncs, violation, excluded)
 	}
 
@@ -98,8 +96,8 @@ func appendEvalResult(violations []Violation, excludedFuncs []ExcludedFunc, viol
 	return violations, excludedFuncs
 }
 
-func Check(paths []string, maxLines int, opts Options) (Report, error) {
-	assertutil.Assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
+func Check(paths []string, maxComplexity int, opts Options) (Report, error) {
+	assertutil.Assertf(maxComplexity > 0, "maxComplexity must be positive, got %d", maxComplexity)
 
 	report := Report{
 		Violations:    []Violation{},
@@ -116,7 +114,7 @@ func Check(paths []string, maxLines int, opts Options) (Report, error) {
 	}
 
 	for _, filePath := range filesToCheck {
-		violations, excludedFuncs, skippedFile := scanFileForLength(filePath, maxLines, opts)
+		violations, excludedFuncs, skippedFile := scanFileForComplexity(filePath, maxComplexity, opts)
 		if skippedFile != nil {
 			report.Skipped = append(report.Skipped, *skippedFile)
 			continue

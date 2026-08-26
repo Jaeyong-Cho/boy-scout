@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"boy-scout/internal/filelen"
+	"boy-scout/internal/linelen"
 	"boy-scout/internal/tsfunclen"
 )
 
@@ -55,6 +56,28 @@ var tsFilelenCfg = CheckerConfig{
 	},
 }
 
+var tsLinelenCfg = CheckerConfig{
+	Name: "linelen",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		maxChars := fs.Int("max-chars", 100, "maximum line length in characters")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := linelen.Options{
+					ExcludeFiles: excludeFiles,
+					Debug:        debug,
+				}
+				return linelen.Check(paths, *maxChars, []string{".ts", ".tsx", ".html", ".css"}, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderLinelenJSON(report.(linelen.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderLinelenText(report.(linelen.Report), stdout, stderr)
+	},
+}
+
 // Thin wrappers that dispatch to configs.
 func runTsFunclen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsFunclenCfg, args, stdout, stderr)
@@ -62,6 +85,10 @@ func runTsFunclen(args []string, stdout, stderr io.Writer) int {
 
 func runTsFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsFilelenCfg, args, stdout, stderr)
+}
+
+func runTsLinelen(args []string, stdout, stderr io.Writer) int {
+	return runCheck(tsLinelenCfg, args, stdout, stderr)
 }
 
 // runTsAll runs all TypeScript checks sequentially.

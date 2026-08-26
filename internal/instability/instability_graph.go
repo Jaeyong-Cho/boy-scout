@@ -10,14 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/srcfiles"
 )
-
-func assertf_graph(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
 
 // findModuleRoot walks upward from path looking for go.mod, returning (root, moduleName, error).
 // Returns error if no go.mod is found by the filesystem root.
@@ -83,7 +78,7 @@ func readModuleName(gomodPath string) (string, error) {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {
 				moduleName := parts[1]
-				assertf_graph(moduleName != "", "parsed module line is non-empty")
+				assertutil.Assertf(moduleName != "", "parsed module line is non-empty")
 				return moduleName, nil
 			}
 		}
@@ -154,9 +149,9 @@ func collectPackageImports(filesToCheck []string, root, moduleName string) (map[
 func resolvePackageImportPath(filePath, root, moduleName string) string {
 	dir := filepath.Dir(filePath)
 	absDir, err := filepath.Abs(dir)
-	assertf_graph(err == nil, "filepath.Abs failed for dir %q: %v", dir, err)
+	assertutil.Assertf(err == nil, "filepath.Abs failed for dir %q: %v", dir, err)
 	relDir, err := filepath.Rel(root, absDir)
-	assertf_graph(err == nil, "filepath.Rel failed for root %q dir %q: %v", root, absDir, err)
+	assertutil.Assertf(err == nil, "filepath.Rel failed for root %q dir %q: %v", root, absDir, err)
 	if relDir == "." {
 		return moduleName
 	}
@@ -213,7 +208,7 @@ func ComputeEdgesAndCoupling(packageImports map[string]map[string]bool) ([]Edge,
 func AddPackageStatsForEdge(g *Graph, e Edge, caferent, cefferent map[string]int, packageFiles map[string][]string) {
 	ca := caferent[e.Source]
 	ce := cefferent[e.Source]
-	assertf_graph(ca+ce > 0, "Ca+Ce > 0 for package in edge")
+	assertutil.Assertf(ca+ce > 0, "Ca+Ce > 0 for package in edge")
 	instability := float64(ce) / float64(ca+ce)
 
 	if _, exists := g.Packages[e.Source]; !exists {
@@ -227,7 +222,7 @@ func AddPackageStatsForEdge(g *Graph, e Edge, caferent, cefferent map[string]int
 
 	ca_b := caferent[e.Target]
 	ce_b := cefferent[e.Target]
-	assertf_graph(ca_b+ce_b > 0, "Ca+Ce > 0 for package in edge")
+	assertutil.Assertf(ca_b+ce_b > 0, "Ca+Ce > 0 for package in edge")
 	instability_b := float64(ce_b) / float64(ca_b+ce_b)
 
 	if _, exists := g.Packages[e.Target]; !exists {

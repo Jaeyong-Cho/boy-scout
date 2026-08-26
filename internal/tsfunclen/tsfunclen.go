@@ -1,14 +1,14 @@
 package tsfunclen
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/typescript/typescript"
-	"github.com/smacker/go-tree-sitter/typescript/tsx"
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/srcfiles"
+	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/typescript/tsx"
+	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
 type Violation struct {
@@ -37,12 +37,6 @@ type Report struct {
 	Violations    []Violation
 	Skipped       []SkippedFile
 	ExcludedFuncs []ExcludedFunc
-}
-
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
 }
 
 // hasErrorNode recursively checks if any node in the tree is an ERROR node
@@ -143,7 +137,7 @@ func scanFileForTsLength(filePath string, source []byte, maxLines int, opts Opti
 
 		// Check if function exceeds limit
 		if length > maxLines {
-			assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
+			assertutil.Assertf(length > maxLines, "appended violation does not exceed limit %d", maxLines)
 			violations = append(violations, Violation{
 				File:   filePath,
 				Line:   fn.startLine,
@@ -159,7 +153,7 @@ func scanFileForTsLength(filePath string, source []byte, maxLines int, opts Opti
 
 // Check analyzes TypeScript files in the given paths for function length violations
 func Check(paths []string, maxLines int, opts Options) (Report, error) {
-	assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
+	assertutil.Assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
 
 	files, excluded, skipped := srcfiles.Collect(paths, []string{".ts", ".tsx"}, opts.ExcludeFiles)
 
@@ -189,8 +183,8 @@ func Check(paths []string, maxLines int, opts Options) (Report, error) {
 		violations, excludedFuncs, skipped := scanFileForTsLength(filePath, source, maxLines, opts)
 		if skipped != nil {
 			// Invariant: syntax error file must produce zero violations and excluded funcs from this file
-			assertf(len(violations) == 0, "syntax error file %s produced violations", filePath)
-			assertf(len(excludedFuncs) == 0, "syntax error file %s produced excluded funcs", filePath)
+			assertutil.Assertf(len(violations) == 0, "syntax error file %s produced violations", filePath)
+			assertutil.Assertf(len(excludedFuncs) == 0, "syntax error file %s produced excluded funcs", filePath)
 			allSkipped = append(allSkipped, *skipped)
 		} else {
 			allViolations = append(allViolations, violations...)

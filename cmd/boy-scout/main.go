@@ -7,16 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"boy-scout/internal/assertutil"
 )
 
 // version is the built version of boy-scout, overridable via -ldflags -X main.version=...
 var version = "dev"
-
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
-}
 
 // parsePatterns returns nil if s is empty, else splits on comma and drops empty segments.
 func parsePatterns(s string) []string {
@@ -83,7 +79,9 @@ func excludePatternsFrom(excludeFile, excludeFunc string) (excludeFiles, exclude
 var langSubcommands = map[string]map[string]func(args []string, stdout, stderr io.Writer) int{
 	"go": {
 		"gofunclen":    runGoFunclen,
+		"complexity":   runGoComplexity,
 		"filelen":      runGoFilelen,
+		"linelen":      runGoLinelen,
 		"crap":         runGoCrap,
 		"duplication":  runGoDuplication,
 		"instability":  runGoInstability,
@@ -91,14 +89,16 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 		"all":          runGoAll,
 	},
 	"cpp": {
-		"funclen":       runCppFunclen,
-		"filelen":       runCppFilelen,
-		"instability":   runCppInstability,
-		"abstractness":  runCppAbstractness,
+		"funclen":      runCppFunclen,
+		"filelen":      runCppFilelen,
+		"linelen":      runCppLinelen,
+		"instability":  runCppInstability,
+		"abstractness": runCppAbstractness,
 	},
 	"ts": {
 		"funclen": runTsFunclen,
 		"filelen": runTsFilelen,
+		"linelen": runTsLinelen,
 	},
 }
 
@@ -145,10 +145,9 @@ func dispatchLang(lang string, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	assertf(fn != nil, "registered subcommand handler for %s/%s is nil", lang, subcommand)
+	assertutil.Assertf(fn != nil, "registered subcommand handler for %s/%s is nil", lang, subcommand)
 	return fn(args[1:], stdout, stderr)
 }
-
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))

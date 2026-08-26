@@ -6,7 +6,9 @@ import (
 	"go/token"
 	"math"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/funcignore"
+	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/srcfiles"
 )
 
@@ -53,8 +55,8 @@ type Report struct {
 // CRAP(m) = comp(m)² × (1 − cov(m))³ + comp(m)
 // where comp is cyclomatic complexity (int >= 1) and cov is coverage (float64 in [0.0, 1.0]).
 func crapScore(comp int, cov float64) float64 {
-	assertf(comp >= 1, "crapScore requires comp>=1, got %d", comp)
-	assertf(cov >= 0 && cov <= 1, "crapScore requires cov in [0,1], got %f", cov)
+	assertutil.Assertf(comp >= 1, "crapScore requires comp>=1, got %d", comp)
+	assertutil.Assertf(cov >= 0 && cov <= 1, "crapScore requires cov in [0,1], got %f", cov)
 
 	score := math.Pow(float64(comp), 2)*math.Pow(1-cov, 3) + float64(comp)
 	return score
@@ -67,7 +69,6 @@ func evaluate(comp int, cov float64, threshold float64) (score float64, violated
 	violated = score > threshold
 	return
 }
-
 
 // evalFuncCrap evaluates a single function's CRAP score, or reports why it was excluded.
 // Exactly one of the two return values is non-nil.
@@ -82,14 +83,14 @@ func evalFuncCrap(fn *ast.FuncDecl, fset *token.FileSet, filePath string, fileBl
 		return nil, &ExcludedFunc{File: filePath, Line: startLine, Func: fn.Name.Name, Reason: reason}
 	}
 
-	comp := cyclomaticComplexity(fn)
+	comp := gocomplexity.CyclomaticComplexity(fn)
 	cov := functionCoverage(fileBlocks, fileInProfile, startLine, endLine)
 	score, violated := evaluate(comp, cov, threshold)
 	if !violated {
 		return nil, nil
 	}
 
-	assertf(score > threshold, "appended violation score %f does not exceed threshold %f", score, threshold)
+	assertutil.Assertf(score > threshold, "appended violation score %f does not exceed threshold %f", score, threshold)
 	return &Violation{
 		File:       filePath,
 		Line:       startLine,
@@ -143,7 +144,7 @@ func appendEvalResult(violations []Violation, excludedFuncs []ExcludedFunc, viol
 // It returns a report of all functions exceeding the threshold, or an error if
 // the go.mod file is missing or go test fails to build.
 func Check(paths []string, threshold float64, opts Options) (Report, error) {
-	assertf(threshold > 0, "threshold must be positive, got %v", threshold)
+	assertutil.Assertf(threshold > 0, "threshold must be positive, got %v", threshold)
 
 	report := Report{
 		Violations:    []Violation{},
@@ -159,7 +160,7 @@ func Check(paths []string, threshold float64, opts Options) (Report, error) {
 	defer cleanup()
 
 	excludeFiles := append(append([]string{}, defaultExcludeFiles...), opts.ExcludeFiles...)
-	assertf(len(excludeFiles) >= len(defaultExcludeFiles), "crap.Check: merged exclude patterns lost the default test-file exclude")
+	assertutil.Assertf(len(excludeFiles) >= len(defaultExcludeFiles), "crap.Check: merged exclude patterns lost the default test-file exclude")
 	filesToCheck, excludedFiles, skipped := srcfiles.Collect(paths, []string{".go"}, excludeFiles)
 	report.Skipped = append(report.Skipped, skipped...)
 	if opts.Debug {

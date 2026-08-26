@@ -12,10 +12,10 @@ package filelen
 
 import (
 	"bytes"
-	"fmt"
 	"path/filepath"
 	"strings"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/srcfiles"
 )
 
@@ -53,15 +53,9 @@ type Options struct {
 }
 
 type Report struct {
-	Violations   []Violation
-	Skipped      []SkippedFile
+	Violations    []Violation
+	Skipped       []SkippedFile
 	ExcludedFiles []string
-}
-
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
 }
 
 // countPhysicalLines counts the number of physical lines in a byte slice.
@@ -154,8 +148,8 @@ func countLoC(content []byte, ext string) int {
 // Check scans files matching the given extensions and reports those exceeding maxLines.
 // It walks directories, skipping vendor/ and dot-directories, and respects exclude patterns.
 func Check(paths []string, maxLines int, extensions []string, opts Options) (Report, error) {
-	assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
-	assertf(len(extensions) > 0, "extensions must not be empty")
+	assertutil.Assertf(maxLines > 0, "maxLines must be positive, got %d", maxLines)
+	assertutil.Assertf(len(extensions) > 0, "extensions must not be empty")
 
 	report := Report{
 		Violations:    []Violation{},
@@ -181,7 +175,7 @@ func Check(paths []string, maxLines int, extensions []string, opts Options) (Rep
 		loc := countLoC(content, filepath.Ext(filePath))
 
 		// Postcondition: LoC must not exceed physical lines
-		assertf(loc <= physicalLines, "LoC (%d) must not exceed physical line count (%d) for %s", loc, physicalLines, filePath)
+		assertutil.Assertf(loc <= physicalLines, "LoC (%d) must not exceed physical line count (%d) for %s", loc, physicalLines, filePath)
 
 		if loc > maxLines {
 			report.Violations = append(report.Violations, Violation{

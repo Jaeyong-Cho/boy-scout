@@ -1,7 +1,6 @@
 package srcfiles
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +14,6 @@ func ReadFile(path string) ([]byte, error) {
 type SkippedFile struct {
 	File  string
 	Error string
-}
-
-func assertf(cond bool, format string, args ...any) {
-	if !cond {
-		panic(fmt.Sprintf(format, args...))
-	}
 }
 
 // matchesExclude returns true if path matches any exclude pattern by full path or basename.

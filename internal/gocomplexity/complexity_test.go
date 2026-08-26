@@ -1,4 +1,4 @@
-package crap
+package gocomplexity
 
 import (
 	"go/ast"
@@ -30,7 +30,7 @@ func F() {
 	_ = x
 }`
 	fn := parseFunc(t, src)
-	c := cyclomaticComplexity(fn)
+	c := CyclomaticComplexity(fn)
 	if c != 1 {
 		t.Errorf("expected 1, got %d", c)
 	}
@@ -44,7 +44,7 @@ func F(x int) {
 	}
 }`
 	fn := parseFunc(t, src)
-	c := cyclomaticComplexity(fn)
+	c := CyclomaticComplexity(fn)
 	if c != 2 {
 		t.Errorf("expected 2, got %d", c)
 	}
@@ -60,7 +60,7 @@ func F() {
 	}
 }`
 	fn := parseFunc(t, src)
-	c := cyclomaticComplexity(fn)
+	c := CyclomaticComplexity(fn)
 	if c != 3 {
 		t.Errorf("expected 3, got %d", c)
 	}
@@ -74,7 +74,7 @@ func F(a, b bool) {
 	}
 }`
 	fn := parseFunc(t, src)
-	c := cyclomaticComplexity(fn)
+	c := CyclomaticComplexity(fn)
 	if c != 3 {
 		t.Errorf("expected 3, got %d", c)
 	}
@@ -95,7 +95,7 @@ func F(x int) {
 	}
 }`
 	fn := parseFunc(t, src)
-	c := cyclomaticComplexity(fn)
+	c := CyclomaticComplexity(fn)
 	if c != 4 {
 		t.Errorf("expected 4, got %d", c)
 	}

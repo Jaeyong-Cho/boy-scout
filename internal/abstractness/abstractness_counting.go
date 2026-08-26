@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+
+	"boy-scout/internal/assertutil"
 )
 
 // surfaceRatio computes (# exported top-level declarations) / (# total top-level declarations).
@@ -19,7 +21,7 @@ func surfaceRatio(files []string) (ratio float64, err error) {
 		totalCount += tot
 	}
 
-	assertf(totalCount > 0, "surfaceRatio called on package with 0 declarations; this should not happen for a Zone-of-Pain candidate")
+	assertutil.Assertf(totalCount > 0, "surfaceRatio called on package with 0 declarations; this should not happen for a Zone-of-Pain candidate")
 	return float64(exportedCount) / float64(totalCount), nil
 }
 

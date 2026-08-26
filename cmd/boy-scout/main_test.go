@@ -1889,3 +1889,447 @@ func ModifiedFunc(x int) int {
 	_ = exitCode
 }
 
+func TestRun_ComplexityRespectsMaxComplexityFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file with a function of complexity 3
+	src := `package main
+
+func Process(x int) string {
+	if x > 10 {
+		if x > 20 {
+			return "big"
+		}
+		return "medium"
+	}
+	return "small"
+}`
+
+	tmpFile := tmpDir + "/main.go"
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "complexity", "--max-complexity=2", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Expect format mentioning Process with complexity=3 and limit=2
+	if !strings.Contains(output, "Process") {
+		t.Errorf("expected output to contain 'Process', got:\n%s", output)
+	}
+	if !strings.Contains(output, "complexity=3") {
+		t.Errorf("expected output to contain 'complexity=3', got:\n%s", output)
+	}
+	if !strings.Contains(output, "limit=2") {
+		t.Errorf("expected output to contain 'limit=2', got:\n%s", output)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_ComplexityJSONFormatOutputsValidSchema(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file with a function of complexity 3
+	src := `package main
+
+func Process(x int) string {
+	if x > 10 {
+		if x > 20 {
+			return "big"
+		}
+		return "medium"
+	}
+	return "small"
+}`
+
+	tmpFile := tmpDir + "/main.go"
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "complexity", "--max-complexity=2", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	var report struct {
+		Violations []struct {
+			Complexity int `json:"complexity"`
+		} `json:"violations"`
+	}
+
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
+	}
+
+	if len(report.Violations) != 1 {
+		t.Errorf("expected 1 violation, got %d", len(report.Violations))
+	}
+
+	if len(report.Violations) > 0 && report.Violations[0].Complexity != 3 {
+		t.Errorf("expected complexity 3, got %d", report.Violations[0].Complexity)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_AllIncludesComplexity(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file with a function of complexity > 10 (violates default limit)
+	src := `package main
+
+func VeryComplex(x int) string {
+	if x > 1 {
+		if x > 2 {
+			if x > 3 {
+				if x > 4 {
+					if x > 5 {
+						if x > 6 {
+							if x > 7 {
+								if x > 8 {
+									if x > 9 {
+										if x > 10 {
+											if x > 11 {
+												return "deep"
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return "simple"
+}`
+
+	tmpFile := tmpDir + "/main.go"
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	// Change to tmpDir for the test
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	// Test text output contains [complexity] line
+	var stdoutBuf, stderrBuf bytes.Buffer
+	run([]string{"go", "all", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	stderr := stderrBuf.String()
+	if !strings.Contains(output, "[complexity]") {
+		t.Errorf("expected text output to contain '[complexity]' line, got:\nstdout:%s\nstderr:%s", output, stderr)
+	}
+
+	// Test JSON output contains "complexity" key
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	var report map[string]interface{}
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\nstdout: %s\nstderr: %s", err, stdoutBuf.String(), stderrBuf.String())
+	}
+
+	if _, ok := report["complexity"]; !ok {
+		t.Errorf("expected JSON output to contain 'complexity' key, got: %v", report)
+	}
+}
+
+func TestRun_ComplexityAtLimitIsCompliant(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a function with exactly complexity 10 (the default limit)
+	src := `package main
+
+func AtLimit(x int) string {
+	if x > 1 {
+		if x > 2 {
+			if x > 3 {
+				if x > 4 {
+					if x > 5 {
+						if x > 6 {
+							if x > 7 {
+								if x > 8 {
+									if x > 9 {
+										return "deep"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return "simple"
+}`
+
+	tmpFile := tmpDir + "/main.go"
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "complexity", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Should have no violations
+	if !strings.Contains(output, "") || strings.Contains(output, "AtLimit") {
+		t.Errorf("expected no violation for function at limit, got:\n%s", output)
+	}
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+}
+
+func TestRun_ComplexitySkipsUnparseableFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file with invalid Go syntax
+	invalidSrc := "func broken( {"
+	tmpFile := tmpDir + "/broken.go"
+	if err := os.WriteFile(tmpFile, []byte(invalidSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "complexity", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	// Exit code should be 2 (parse error/skipped file)
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2 for skipped file, got %d (stdout: %s, stderr: %s)", exitCode, stdoutBuf.String(), stderrBuf.String())
+	}
+}
+
+func TestRun_ComplexityDefaultsToCurrentDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a temp dir with a violating file
+	lines := []string{"package main", "", "func Complex() {"}
+	for i := 0; i < 11; i++ {
+		lines = append(lines, fmt.Sprintf("\tif x > %d { _ = x }", i))
+	}
+	lines = append(lines, "}")
+	src := strings.Join(lines, "\n")
+
+	complexGoPath := tmpDir + "/complex.go"
+	if err := os.WriteFile(complexGoPath, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Change to that directory and run with no path argument
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("Chdir back failed: %v", err)
+		}
+	})
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "complexity"}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	stderr := stderrBuf.String()
+	if !strings.Contains(output, "Complex") {
+		t.Errorf("expected output to contain 'Complex', got stdout:\n%s\nstderr:\n%s", output, stderr)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRun_GoLinelenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a short Go file
+	shortFile := filepath.Join(tmpDir, "short.go")
+	if err := os.WriteFile(shortFile, []byte("package main\nfunc main() {}"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a long Go file with a 105-char line (exceeding limit of 100)
+	longFile := filepath.Join(tmpDir, "long.go")
+	line105 := "x := " + strings.Repeat("1", 100) // 5 + 100 = 105 chars
+	if err := os.WriteFile(longFile, []byte(line105+"\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"go", "linelen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long file as violation
+	if !strings.Contains(output, "long.go") {
+		t.Errorf("expected output to contain 'long.go', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "105") {
+		t.Errorf("expected output to contain '105', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+func TestRun_CppLinelenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a short C++ file
+	shortFile := filepath.Join(tmpDir, "short.cpp")
+	if err := os.WriteFile(shortFile, []byte("int main() { return 0; }"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a long C++ file with a 105-char line (exceeding limit of 100)
+	longFile := filepath.Join(tmpDir, "long.cpp")
+	line105 := "int x = " + strings.Repeat("1", 97) // 8 + 97 = 105 chars
+	if err := os.WriteFile(longFile, []byte(line105+";\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"cpp", "linelen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long file as violation
+	if !strings.Contains(output, "long.cpp") {
+		t.Errorf("expected output to contain 'long.cpp', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "106") { // 105 + 1 for the semicolon
+		t.Errorf("expected output to contain '106', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+func TestRun_TsLinelenCharacterization(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a short TypeScript file
+	shortFile := filepath.Join(tmpDir, "short.ts")
+	if err := os.WriteFile(shortFile, []byte("function foo() { return 1; }"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Create a long TypeScript file with a 105-char line (exceeding limit of 100)
+	longFile := filepath.Join(tmpDir, "long.ts")
+	line105 := "const x = " + strings.Repeat("1", 95) // 10 + 95 = 105 chars
+	if err := os.WriteFile(longFile, []byte(line105+";\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"ts", "linelen", tmpDir}, &stdout, &stderr)
+
+	output := stdout.String()
+	stderrOutput := stderr.String()
+
+	// Should report the long file as violation
+	if !strings.Contains(output, "long.ts") {
+		t.Errorf("expected output to contain 'long.ts', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+	if !strings.Contains(output, "106") { // 105 + 1 for the semicolon
+		t.Errorf("expected output to contain '106', got:\nstdout: %s\nstderr: %s", output, stderrOutput)
+	}
+
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 (violation found), got %d", exitCode)
+	}
+}
+
+func TestRun_AllIncludesLinelen(t *testing.T) {
+	// Create a temp dir with a long line
+	tmpDir := t.TempDir()
+
+	lines := []string{"package main", "", "func TestFunc() {"}
+	lines = append(lines, "\t// "+strings.Repeat("x", 105)) // A 100+ char comment line
+	lines = append(lines, "}")
+	src := strings.Join(lines, "\n")
+
+	if err := os.WriteFile(tmpDir+"/long_line.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Initialize go module
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	// Test text output
+	var stdoutBuf, stderrBuf bytes.Buffer
+	_ = run([]string{"go", "all", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	stderr := stderrBuf.String()
+
+	if !strings.Contains(output, "[linelen]") {
+		t.Errorf("expected '[linelen]' in text output, got:\nstdout: %s\nstderr: %s", output, stderr)
+	}
+
+	// Test JSON output
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	_ = run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	jsonOutput := stdoutBuf.String()
+	stderr = stderrBuf.String()
+
+	if !strings.Contains(jsonOutput, "\"linelen\"") {
+		t.Errorf("expected '\"linelen\"' key in JSON output, got:\nstdout: %s\nstderr: %s", jsonOutput, stderr)
+	}
+}
+
