@@ -14,7 +14,7 @@ boy-scout [flags] [paths...]
 
 Available checks:
 - **gofunclen**: Flag Go functions exceeding a configurable line limit (default: 50)
-- **complexity**: Flag Go/C++ functions exceeding a configurable cyclomatic complexity limit (default: 6)
+- **complexity**: Flag Go/C++/TS functions exceeding a configurable cyclomatic complexity limit (default: 6)
 - **filelen**: Flag files exceeding a configurable line limit
 - **linelen**: Flag physical lines over a configurable character limit (default: 100), exempting quoted-string overflow
 - **duplication**: Flag duplicate code

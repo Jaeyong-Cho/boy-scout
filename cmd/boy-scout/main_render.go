@@ -14,6 +14,7 @@ import (
 	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
 	"boy-scout/internal/linelen"
+	"boy-scout/internal/tscomplexity"
 	"boy-scout/internal/tsfunclen"
 )
 
@@ -371,5 +372,26 @@ func renderTsFunclenText(report tsfunclen.Report, stdout, stderr io.Writer) int 
 }
 
 func renderTsFunclenJSON(report tsfunclen.Report, stdout, stderr io.Writer) int {
+	return renderReportAsJSON(report, stdout, stderr)
+}
+
+// writeTsComplexityLines writes a ts complexity report's violations and excluded entries to w.
+func writeTsComplexityLines(w io.Writer, prefix string, report tscomplexity.Report) {
+	writeLines(w, prefix, report.Violations, report.ExcludedFuncs,
+		func(v tscomplexity.Violation) string {
+			return fmt.Sprintf("%s:%d: function %s has complexity=%d (limit %d)", v.File, v.Line, v.Func, v.Complexity, v.Limit)
+		},
+		func(exc tscomplexity.ExcludedFunc) string {
+			return fmt.Sprintf("%s:%d: function %s excluded (%s)", exc.File, exc.Line, exc.Func, exc.Reason)
+		},
+	)
+}
+
+func renderTsComplexityText(report tscomplexity.Report, stdout, stderr io.Writer) int {
+	writeTsComplexityLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderTsComplexityJSON(report tscomplexity.Report, stdout, stderr io.Writer) int {
 	return renderReportAsJSON(report, stdout, stderr)
 }

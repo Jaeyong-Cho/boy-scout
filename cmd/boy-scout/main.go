@@ -93,10 +93,11 @@ var langSubcommands = map[string]map[string]func(args []string, stdout, stderr i
 		"all":        runCppAll,
 	},
 	"ts": {
-		"funclen": runTsFunclen,
-		"filelen": runTsFilelen,
-		"linelen": runTsLinelen,
-		"all":     runTsAll,
+		"funclen":    runTsFunclen,
+		"complexity": runTsComplexity,
+		"filelen":    runTsFilelen,
+		"linelen":    runTsLinelen,
+		"all":        runTsAll,
 	},
 }
 

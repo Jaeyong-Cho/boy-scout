@@ -2069,3 +2069,111 @@ func TestRun_TsAllInvalidPathErrors(t *testing.T) {
 	}
 }
 
+func TestRun_TsComplexityFlagViolation(t *testing.T) {
+	// Test that ts complexity flags a complex function at limit 6
+	tmpDir := t.TempDir()
+	src := `export function handler(event: any) {
+  if (event.type === "request") {
+    if (event.method === "GET") {
+      if (event.path === "/api/users") {
+        if (event.headers["authorization"]) {
+          if (event.query.id) {
+            if (event.query.id !== "") {
+              return { status: 200, body: "OK" };
+            }
+          }
+        }
+      }
+    }
+  }
+  return { status: 404, body: "Not Found" };
+}`
+	if err := os.WriteFile(tmpDir+"/test.ts", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"ts", "complexity", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Parse JSON to verify
+	var report interface{}
+	err := json.Unmarshal([]byte(output), &report)
+	if err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
+	}
+
+	m := report.(map[string]interface{})
+	violations := m["violations"].([]interface{})
+
+	if len(violations) != 1 {
+		t.Errorf("expected 1 violation, got %d\noutput: %s", len(violations), output)
+	}
+
+	if len(violations) > 0 {
+		v := violations[0].(map[string]interface{})
+		if v["func"].(string) != "handler" {
+			t.Errorf("expected function 'handler', got '%s'", v["func"])
+		}
+		if int(v["complexity"].(float64)) != 7 {
+			t.Errorf("expected complexity 7, got %d", int(v["complexity"].(float64)))
+		}
+		if int(v["limit"].(float64)) != 6 {
+			t.Errorf("expected limit 6, got %d", int(v["limit"].(float64)))
+		}
+	}
+
+	// Non-zero exit code for violations
+	if exitCode == 0 {
+		t.Errorf("expected non-zero exit code for violations, got 0")
+	}
+}
+
+func TestRun_TsComplexityRespectsFlagOverride(t *testing.T) {
+	// Test that --max-complexity flag overrides the default
+	tmpDir := t.TempDir()
+	src := `export function handler(event: any) {
+  if (event.type === "request") {
+    if (event.method === "GET") {
+      if (event.path === "/api/users") {
+        if (event.headers["authorization"]) {
+          if (event.query.id) {
+            if (event.query.id !== "") {
+              return { status: 200, body: "OK" };
+            }
+          }
+        }
+      }
+    }
+  }
+  return { status: 404, body: "Not Found" };
+}`
+	if err := os.WriteFile(tmpDir+"/test.ts", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"ts", "complexity", "--format=json", "--max-complexity=10", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	var report interface{}
+	err := json.Unmarshal([]byte(output), &report)
+	if err != nil {
+		t.Fatalf("failed to parse JSON output: %v", err)
+	}
+
+	m := report.(map[string]interface{})
+	violations := m["violations"].([]interface{})
+
+	if len(violations) != 0 {
+		t.Errorf("expected 0 violations with --max-complexity=10, got %d\noutput: %s", len(violations), output)
+	}
+
+	// Zero exit code when no violations
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 when no violations, got %d", exitCode)
+	}
+}
+

@@ -7,6 +7,7 @@ import (
 	"boy-scout/internal/assertutil"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/linelen"
+	"boy-scout/internal/tscomplexity"
 	"boy-scout/internal/tsfunclen"
 )
 
@@ -79,6 +80,25 @@ var tsLinelenCfg = CheckerConfig{
 	},
 }
 
+var tsComplexityCfg = CheckerConfig{
+	Name: "complexity",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		maxComplexity := fs.Int("max-complexity", 6, "maximum cyclomatic complexity per function")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := tscomplexity.Options{ExcludeFiles: excludeFiles, ExcludeFuncs: excludeFuncs, Debug: debug}
+				return tscomplexity.Check(paths, *maxComplexity, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderTsComplexityJSON(report.(tscomplexity.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderTsComplexityText(report.(tscomplexity.Report), stdout, stderr)
+	},
+}
+
 // Thin wrappers that dispatch to configs.
 func runTsFunclen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsFunclenCfg, args, stdout, stderr)
@@ -90,6 +110,10 @@ func runTsFilelen(args []string, stdout, stderr io.Writer) int {
 
 func runTsLinelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsLinelenCfg, args, stdout, stderr)
+}
+
+func runTsComplexity(args []string, stdout, stderr io.Writer) int {
+	return runCheck(tsComplexityCfg, args, stdout, stderr)
 }
 
 // runTsAll runs all TypeScript checks and combines their reports.
