@@ -623,9 +623,9 @@ func TestRun_DuplicationReferenceExplainsWhyAndHow(t *testing.T) {
 		t.Errorf("expected duplication.md to reference Go example file, got:\n%s", contentStr)
 	}
 
-	// Check that it notes C++ isn't supported yet
-	if !strings.Contains(contentStr, "not yet supported") || !strings.Contains(contentStr, "C++") {
-		t.Errorf("expected duplication.md to note C++ not yet supported, got:\n%s", contentStr)
+	// Check that it references the C++ example
+	if !strings.Contains(contentStr, "references/lang/cpp/duplication.md") {
+		t.Errorf("expected duplication.md to reference C++ duplication example, got:\n%s", contentStr)
 	}
 }
 
@@ -678,13 +678,13 @@ func TestRun_TemplateTableRoutesDuplicationToReferences(t *testing.T) {
 		t.Errorf("expected SKILL.md to reference references/lang/go/duplication.md, got:\n%s", contentStr)
 	}
 
-	// Check that C++ column notes duplication isn't supported for C++
-	if !strings.Contains(contentStr, "(not yet supported for C++)") {
-		t.Errorf("expected SKILL.md to note duplication not yet supported for C++, got:\n%s", contentStr)
+	// Check that C++ column references duplication support
+	if !strings.Contains(contentStr, "references/lang/cpp/duplication.md") {
+		t.Errorf("expected SKILL.md to reference references/lang/cpp/duplication.md, got:\n%s", contentStr)
 	}
 }
 
-func TestRun_CppReferencesHaveNoDuplicationFile(t *testing.T) {
+func TestRun_CppReferencesHaveDuplicationFile(t *testing.T) {
 	baseDir := t.TempDir()
 
 	_, err := Run(baseDir, "", ".agents")
@@ -693,9 +693,9 @@ func TestRun_CppReferencesHaveNoDuplicationFile(t *testing.T) {
 	}
 
 	duplicationPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp", "duplication.md")
-	if _, err := os.Stat(duplicationPath); err == nil {
-		t.Errorf("expected C++ duplication.md to NOT exist, but file was found at %q", duplicationPath)
-	} else if !os.IsNotExist(err) {
+	if _, err := os.Stat(duplicationPath); os.IsNotExist(err) {
+		t.Errorf("expected C++ duplication.md to exist at %q, but file was not found", duplicationPath)
+	} else if err != nil {
 		t.Errorf("unexpected error checking for C++ duplication.md: %v", err)
 	}
 }

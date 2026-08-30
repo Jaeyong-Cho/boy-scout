@@ -2258,7 +2258,7 @@ func (g *Good) Touch() { g.x = 1 }
 }
 
 func TestRun_CppTsAllExcludesCohesion(t *testing.T) {
-	// AC12: cpp/ts all commands do not include cohesion
+	// Per plan: C++ all includes complexity, cohesion, and duplication (per AC9)
 	tmpDir := t.TempDir()
 
 	// Create a simple C++ file
@@ -2283,8 +2283,15 @@ public:
 	}
 
 	m := report.(map[string]interface{})
-	if _, ok := m["cohesion"]; ok {
-		t.Errorf("expected no 'cohesion' key in C++ all output, but found one")
+	// C++ all now includes complexity, cohesion, and duplication
+	if _, ok := m["complexity"]; !ok {
+		t.Errorf("expected 'complexity' key in C++ all output")
+	}
+	if _, ok := m["cohesion"]; !ok {
+		t.Errorf("expected 'cohesion' key in C++ all output")
+	}
+	if _, ok := m["duplication"]; !ok {
+		t.Errorf("expected 'duplication' key in C++ all output")
 	}
 
 	// Create a simple TypeScript file

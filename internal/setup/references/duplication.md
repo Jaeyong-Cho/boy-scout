@@ -24,4 +24,4 @@ After extracting, run your test suite once to confirm the shared helper's behavi
 For a concrete before/after code example in your language:
 
 - **Go:** See `references/lang/go/duplication.md`
-- **C++:** not yet supported. Boy-scout's duplication checker runs on Go codebases only.
+- **C++:** See `references/lang/cpp/duplication.md`

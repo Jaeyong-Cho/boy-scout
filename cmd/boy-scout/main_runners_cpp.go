@@ -2,11 +2,13 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 
 	"boy-scout/internal/assertutil"
 	"boy-scout/internal/cppcohesion"
 	"boy-scout/internal/cppcomplexity"
+	"boy-scout/internal/cppduplication"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/linelen"
@@ -125,6 +127,33 @@ var cppCohesionCfg = CheckerConfig{
 	},
 }
 
+var cppDuplicationCfg = CheckerConfig{
+	Name: "duplication",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		minLines := fs.Int("min-lines", 5, "minimum function length in lines to compare")
+		minSimilarity := fs.Float64("min-similarity", 0.70, "minimum LCS-based similarity ratio for Type-3 detection (0.0-1.0)")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				if *minSimilarity < 0.0 || *minSimilarity > 1.0 {
+					return nil, fmt.Errorf("--min-similarity must be in range [0.0, 1.0], got %v", *minSimilarity)
+				}
+				opts := cppduplication.Options{
+					ExcludeFiles: excludeFiles,
+					ExcludeFuncs: excludeFuncs,
+					Debug:        debug,
+				}
+				return cppduplication.CheckWithSimilarity(paths, *minLines, *minSimilarity, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderDuplicationJSON(report.(cppduplication.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderDuplicationText(report.(cppduplication.Report), stdout, stderr)
+	},
+}
+
 // Thin wrappers that dispatch to configs.
 func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppFilelenCfg, args, stdout, stderr)
@@ -146,6 +175,10 @@ func runCppCohesion(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppCohesionCfg, args, stdout, stderr)
 }
 
+func runCppDuplication(args []string, stdout, stderr io.Writer) int {
+	return runCheck(cppDuplicationCfg, args, stdout, stderr)
+}
+
 // runCppAll runs all C++ checks and combines their reports.
 func runCppAll(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("all", flag.ContinueOnError)
@@ -160,16 +193,19 @@ func runCppAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	funclenReport, filelenReport, linelenReport, err := checkAllCpp(paths, excludeFiles, excludeFuncs, *debug)
+	funclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err := checkAllCpp(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		reportError(err, stderr)
 		return 2
 	}
 
 	combined := cppCombinedReport{
-		Funclen: funclenReport,
-		Filelen: filelenReport,
-		Linelen: linelenReport,
+		Funclen:     funclenReport,
+		Complexity:  complexityReport,
+		Cohesion:    cohesionReport,
+		Filelen:     filelenReport,
+		Linelen:     linelenReport,
+		Duplication: duplicationReport,
 	}
 
 	// Render output
@@ -180,19 +216,32 @@ func runCppAll(args []string, stdout, stderr io.Writer) int {
 }
 
 // checkAllCpp runs all C++ checks with shared options.
-func checkAllCpp(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppfunclen.Report, filelen.Report, linelen.Report, error) {
+func checkAllCpp(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppfunclen.Report, cppcomplexity.Report, cppcohesion.Report, filelen.Report, linelen.Report, cppduplication.Report, error) {
 	assertutil.Assertf(len(paths) > 0, "checkAllCpp: paths must not be empty")
 
 	var (
-		funclenReport cppfunclen.Report
-		filelenReport filelen.Report
-		linelenReport linelen.Report
+		funclenReport     cppfunclen.Report
+		complexityReport  cppcomplexity.Report
+		cohesionReport    cppcohesion.Report
+		filelenReport     filelen.Report
+		linelenReport     linelen.Report
+		duplicationReport cppduplication.Report
 	)
 
 	checks := []func() error{
 		func() error {
 			var err error
 			funclenReport, err = checkAllCppFunclen(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			complexityReport, err = checkAllCppComplexity(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			cohesionReport, err = checkAllCppCohesion(paths, excludeFiles, debug)
 			return err
 		},
 		func() error {
@@ -205,15 +254,20 @@ func checkAllCpp(paths []string, excludeFiles, excludeFuncs []string, debug bool
 			linelenReport, err = checkAllCppLinelen(paths, excludeFiles, debug)
 			return err
 		},
+		func() error {
+			var err error
+			duplicationReport, err = checkAllCppDuplication(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
 	}
 
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return funclenReport, filelenReport, linelenReport, err
+			return funclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err
 		}
 	}
 
-	return funclenReport, filelenReport, linelenReport, nil
+	return funclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, nil
 }
 
 func checkAllCppFunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppfunclen.Report, error) {
@@ -239,4 +293,30 @@ func checkAllCppLinelen(paths []string, excludeFiles []string, debug bool) (line
 		Debug:        debug,
 	}
 	return linelen.Check(paths, 100, []string{".cpp", ".h", ".hpp"}, opts)
+}
+
+func checkAllCppComplexity(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppcomplexity.Report, error) {
+	opts := cppcomplexity.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        debug,
+	}
+	return cppcomplexity.Check(paths, 6, opts)
+}
+
+func checkAllCppCohesion(paths []string, excludeFiles []string, debug bool) (cppcohesion.Report, error) {
+	opts := cppcohesion.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
+	return cppcohesion.Check(paths, opts)
+}
+
+func checkAllCppDuplication(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppduplication.Report, error) {
+	opts := cppduplication.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        debug,
+	}
+	return cppduplication.Check(paths, 5, opts)
 }

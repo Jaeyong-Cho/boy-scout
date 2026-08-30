@@ -67,7 +67,7 @@ Before showing a candidate, read: language-agnostic reference (`references/{viol
 | `complexity` | `references/complexity.md` | `references/lang/go/complexity.md` | `references/lang/cpp/complexity.md` | `references/lang/ts/complexity.md` |
 | `filelen` | `references/filelen.md` | `references/lang/go/filelen.md` | `references/lang/cpp/filelen.md` | `references/lang/ts/filelen.md` |
 | `cohesion` | `references/cohesion.md` | `references/lang/go/cohesion.md` | `references/lang/cpp/cohesion.md` | `references/lang/ts/cohesion.md` |
-| `duplication` | `references/duplication.md` | `references/lang/go/duplication.md` | (not yet supported for C++) | (not yet supported) |
+| `duplication` | `references/duplication.md` | `references/lang/go/duplication.md` | `references/lang/cpp/duplication.md` | (not yet supported) |
 
 Each "Why/How" file explains the concept and fix strategy generically. Each language-specific file shows a concrete before/after code example in that language's syntax.
 

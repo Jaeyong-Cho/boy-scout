@@ -225,22 +225,25 @@ func scanFileForDuplication(filePath string, minLines int, opts Options) ([]Func
 	return funcs, excluded, nil
 }
 
-// classifyPair compares two functions and returns their clone type and similarity
-// Type-1: exact raw match, Type-2: exact blind match, Type-3: above-threshold similarity on blind
-// Returns ("", 0.0) if no match at or above minSimilarity
-func classifyPair(a, b *FuncInfo, minSimilarity float64) (cloneType string, similarity float64) {
+// ClassifyPair compares two token sequences (raw and blind) and returns their clone type and similarity.
+// Type-1: exact raw match, Type-2: exact blind match, Type-3: above-threshold similarity on blind.
+// Returns ("", 0.0) if no match at or above minSimilarity.
+// Precondition: len(rawA) == len(blindA) && len(rawB) == len(blindB) (invariant for token sequences)
+func ClassifyPair(rawA, blindA, rawB, blindB []string, minSimilarity float64) (cloneType string, similarity float64) {
+	assertutil.Assertf(len(rawA) == len(blindA) && len(rawB) == len(blindB), "ClassifyPair: raw/blind sequence length mismatch")
+
 	// Check if raw sequences match (Type-1)
-	if sequenceEqual(a.RawSequence, b.RawSequence) {
+	if sequenceEqual(rawA, rawB) {
 		return "Type-1", 1.0
 	}
 
 	// Check if blind sequences match exactly (Type-2)
-	if sequenceEqual(a.BlindSequence, b.BlindSequence) {
+	if sequenceEqual(blindA, blindB) {
 		return "Type-2", 1.0
 	}
 
 	// Check Type-3: compute LCS similarity on blind sequences
-	similarity = lcsSimilarity(a.BlindSequence, b.BlindSequence)
+	similarity = lcsSimilarity(blindA, blindB)
 	if similarity >= minSimilarity {
 		return "Type-3", similarity
 	}
@@ -458,9 +461,9 @@ func sortClustersByDupLines(clusters []Cluster) {
 	})
 }
 
-// buildClusters groups violations into connected components using union-find,
+// BuildClusters groups violations into connected components using union-find,
 // keyed by file:line:func identity
-func buildClusters(violations []Violation) []Cluster {
+func BuildClusters(violations []Violation) []Cluster {
 	if len(violations) == 0 {
 		return []Cluster{}
 	}
@@ -519,7 +522,7 @@ func reportDuplicates(allFuncs []FuncInfo, minSimilarity float64) []Violation {
 			// Assertion: never comparing a function against itself in unordered pairs
 			assertutil.Assertf(i != j, "comparing function against itself")
 
-			cloneType, similarity := classifyPair(a, b, minSimilarity)
+			cloneType, similarity := ClassifyPair(a.RawSequence, a.BlindSequence, b.RawSequence, b.BlindSequence, minSimilarity)
 			if cloneType == "" {
 				continue
 			}
@@ -569,7 +572,7 @@ func CheckWithSimilarity(paths []string, minLines int, minSimilarity float64, op
 
 	allFuncs := scanFilesForFunctions(nonTestFiles, minLines, opts, report)
 	report.Violations = reportDuplicates(allFuncs, minSimilarity)
-	report.Clusters = buildClusters(report.Violations)
+	report.Clusters = BuildClusters(report.Violations)
 
 	return *report, nil
 }

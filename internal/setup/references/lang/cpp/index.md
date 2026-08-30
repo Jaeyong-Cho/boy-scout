@@ -18,6 +18,7 @@ Boy-scout for C++ currently supports:
 2. **complexity** — Function complexity violations
 3. **filelen** — File length violations
 4. **cohesion** — Class/struct cohesion violations
+5. **duplication** — Duplicate code detection
 
 ## Limitations
 
