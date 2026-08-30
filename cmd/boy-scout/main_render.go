@@ -7,6 +7,7 @@ import (
 	"reflect"
 
 	"boy-scout/internal/assertutil"
+	"boy-scout/internal/cppcomplexity"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/duplication"
 	"boy-scout/internal/filelen"
@@ -267,6 +268,27 @@ func renderCppFunclenText(report cppfunclen.Report, stdout, stderr io.Writer) in
 }
 
 func renderCppFunclenJSON(report cppfunclen.Report, stdout, stderr io.Writer) int {
+	return renderReportAsJSON(report, stdout, stderr)
+}
+
+// writeCppComplexityLines writes a cpp complexity report's violations and excluded entries to w.
+func writeCppComplexityLines(w io.Writer, prefix string, report cppcomplexity.Report) {
+	writeLines(w, prefix, report.Violations, report.ExcludedFuncs,
+		func(v cppcomplexity.Violation) string {
+			return fmt.Sprintf("%s:%d: function %s has complexity=%d (limit %d)", v.File, v.Line, v.Func, v.Complexity, v.Limit)
+		},
+		func(exc cppcomplexity.ExcludedFunc) string {
+			return fmt.Sprintf("%s:%d: function %s excluded (%s)", exc.File, exc.Line, exc.Func, exc.Reason)
+		},
+	)
+}
+
+func renderCppComplexityText(report cppcomplexity.Report, stdout, stderr io.Writer) int {
+	writeCppComplexityLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderCppComplexityJSON(report cppcomplexity.Report, stdout, stderr io.Writer) int {
 	return renderReportAsJSON(report, stdout, stderr)
 }
 

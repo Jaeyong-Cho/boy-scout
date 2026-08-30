@@ -4,6 +4,7 @@ import (
 	"flag"
 	"io"
 
+	"boy-scout/internal/cppcomplexity"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/linelen"
@@ -78,6 +79,28 @@ var cppFunclenCfg = CheckerConfig{
 	},
 }
 
+var cppComplexityCfg = CheckerConfig{
+	Name: "complexity",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		maxComplexity := fs.Int("max-complexity", 6, "maximum cyclomatic complexity per function")
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := cppcomplexity.Options{
+					ExcludeFiles: excludeFiles,
+					ExcludeFuncs: excludeFuncs,
+					Debug:        debug,
+				}
+				return cppcomplexity.Check(paths, *maxComplexity, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderCppComplexityJSON(report.(cppcomplexity.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderCppComplexityText(report.(cppcomplexity.Report), stdout, stderr)
+	},
+}
 
 // Thin wrappers that dispatch to configs.
 func runCppFilelen(args []string, stdout, stderr io.Writer) int {
@@ -90,6 +113,10 @@ func runCppLinelen(args []string, stdout, stderr io.Writer) int {
 
 func runCppFunclen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppFunclenCfg, args, stdout, stderr)
+}
+
+func runCppComplexity(args []string, stdout, stderr io.Writer) int {
+	return runCheck(cppComplexityCfg, args, stdout, stderr)
 }
 
 // runCppAll runs all C++ checks sequentially.
