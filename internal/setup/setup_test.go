@@ -700,7 +700,7 @@ func TestRun_CppReferencesHaveNoDuplicationFile(t *testing.T) {
 	}
 }
 
-func TestRun_TemplateShowsCandidatesInsteadOfFixing(t *testing.T) {
+func TestRun_TemplateShowsCandidatesWithCodeAndReasoning(t *testing.T) {
 	baseDir := t.TempDir()
 
 	path, err := Run(baseDir, "", ".agents")
@@ -718,9 +718,9 @@ func TestRun_TemplateShowsCandidatesInsteadOfFixing(t *testing.T) {
 	requiredMarkers := []string{
 		"List code quality violations",
 		"Never edit or write to any file in this step",
-		"@skills/to-plan",
-		"@skills/do-plan",
 		"Hand Off to the User",
+		"Applying the Fix",
+		"Do not commit",
 	}
 
 	for _, marker := range requiredMarkers {
@@ -743,7 +743,7 @@ func TestRun_TemplateShowsCandidatesInsteadOfFixing(t *testing.T) {
 	}
 }
 
-func TestRun_TemplateProposesFixPlanForSelectedViolation(t *testing.T) {
+func TestRun_TemplateProposesFixPlanBeforeApplying(t *testing.T) {
 	baseDir := t.TempDir()
 
 	path, err := Run(baseDir, "", ".agents")
@@ -763,8 +763,8 @@ func TestRun_TemplateProposesFixPlanForSelectedViolation(t *testing.T) {
 		"Fix Plan",
 		"never fabricate a fix plan for something that wasn't offered",
 		"one Fix Plan block per candidate, in the order they were listed",
-		"no code is written, no file is edited, nothing is drafted to disk",
-		"Do not edit, refactor, or commit anything in this skill",
+		"End with a confirmation question",
+		"Execute the plan's steps against the real files",
 	}
 
 	for _, marker := range requiredMarkers {
