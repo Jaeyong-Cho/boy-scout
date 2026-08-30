@@ -51,8 +51,11 @@ release:
 	fi
 	@# Compute the next version
 	$(eval NEXT := $(shell go run ./cmd/release))
-	@# Exit cleanly if no bump-worthy commits
-	@[ "$(NEXT)" != "none" ] || (echo "ℹ️  No bump-worthy commits since last tag. Nothing to release."; exit 0)
+	@# Exit cleanly if no bump-worthy commits — do NOT create a "none" commit
+	@if [ "$(NEXT)" = "none" ]; then \
+		echo "ℹ️  No bump-worthy commits since last tag. Nothing to release."; \
+		exit 0; \
+	fi
 	@echo "📦 Releasing $(NEXT)"
 	@# Build binary with version baked in
 	@mkdir -p bin
