@@ -28,8 +28,25 @@ func Compute(methods []Method) Score {
 	assertutil.Assertf(len(methods) >= 2, "cohesion.Compute: need at least 2 methods, got %d", len(methods))
 
 	n := len(methods)
+	fieldGraph := buildFieldGraph(methods, n)
+	fullGraph := buildFullGraph(methods, fieldGraph, n)
+	lcom4 := computeLCOM4(fullGraph, n)
+	tcc := computeTCC(fieldGraph, n)
+	lcc := computeLCC(fullGraph, n)
 
-	// Build fieldGraph: true if methods i and j share a field
+	return Score{
+		LCOM4:      lcom4,
+		LCOM4Level: lcom4Level(lcom4),
+		TCC:        tcc,
+		TCCLevel:   ratioLevel(tcc),
+		LCC:        lcc,
+		LCCLevel:   ratioLevel(lcc),
+	}
+}
+
+// buildFieldGraph constructs an adjacency matrix where fieldGraph[i][j] is true
+// if methods i and j share at least one field.
+func buildFieldGraph(methods []Method, n int) [][]bool {
 	fieldGraph := make([][]bool, n)
 	for i := range fieldGraph {
 		fieldGraph[i] = make([]bool, n)
@@ -45,8 +62,12 @@ func Compute(methods []Method) Score {
 			}
 		}
 	}
+	return fieldGraph
+}
 
-	// Build fullGraph: fieldGraph edges OR method-calls edges
+// buildFullGraph combines fieldGraph edges (shared fields) with edges for method calls.
+// fullGraph[i][j] is true if methods i and j share a field OR one calls the other.
+func buildFullGraph(methods []Method, fieldGraph [][]bool, n int) [][]bool {
 	fullGraph := make([][]bool, n)
 	for i := range fullGraph {
 		fullGraph[i] = make([]bool, n)
@@ -61,8 +82,11 @@ func Compute(methods []Method) Score {
 			}
 		}
 	}
+	return fullGraph
+}
 
-	// Count connected components in fullGraph using union-find
+// computeLCOM4 counts the number of connected components in fullGraph using union-find.
+func computeLCOM4(fullGraph [][]bool, n int) int {
 	parent := make([]int, n)
 	for i := 0; i < n; i++ {
 		parent[i] = i
@@ -91,9 +115,12 @@ func Compute(methods []Method) Score {
 	for i := 0; i < n; i++ {
 		components[find(i)] = true
 	}
-	lcom4 := len(components)
+	return len(components)
+}
 
-	// Calculate TCC: fraction of method pairs sharing a field (upper triangle only)
+// computeTCC calculates the Tight Class Cohesion: the fraction of method pairs
+// that share at least one field, out of all possible pairs.
+func computeTCC(fieldGraph [][]bool, n int) float64 {
 	fieldPairs := 0
 	totalPairs := n * (n - 1) / 2
 	for i := 0; i < n; i++ {
@@ -103,13 +130,15 @@ func Compute(methods []Method) Score {
 			}
 		}
 	}
-	tcc := 0.0
-	if totalPairs > 0 {
-		tcc = float64(fieldPairs) / float64(totalPairs)
+	if totalPairs == 0 {
+		return 0.0
 	}
+	return float64(fieldPairs) / float64(totalPairs)
+}
 
-	// Calculate LCC: fraction of method pairs connected (directly or indirectly via any path)
-	// Use fullGraph to count connected component sizes, then sum pairs within each component
+// computeLCC calculates Loose Class Cohesion: the fraction of method pairs that are
+// connected directly or indirectly in fullGraph (same connected component), out of all pairs.
+func computeLCC(fullGraph [][]bool, n int) float64 {
 	lccParent := make([]int, n)
 	for i := 0; i < n; i++ {
 		lccParent[i] = i
@@ -141,22 +170,14 @@ func Compute(methods []Method) Score {
 	}
 
 	lccPairs := 0
+	totalPairs := n * (n - 1) / 2
 	for _, size := range componentSizes {
 		lccPairs += size * (size - 1) / 2
 	}
-	lcc := 0.0
-	if totalPairs > 0 {
-		lcc = float64(lccPairs) / float64(totalPairs)
+	if totalPairs == 0 {
+		return 0.0
 	}
-
-	return Score{
-		LCOM4:      lcom4,
-		LCOM4Level: lcom4Level(lcom4),
-		TCC:        tcc,
-		TCCLevel:   ratioLevel(tcc),
-		LCC:        lcc,
-		LCCLevel:   ratioLevel(lcc),
-	}
+	return float64(lccPairs) / float64(totalPairs)
 }
 
 func lcom4Level(v int) string {
