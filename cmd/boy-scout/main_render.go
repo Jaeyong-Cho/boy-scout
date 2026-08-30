@@ -14,6 +14,7 @@ import (
 	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
 	"boy-scout/internal/linelen"
+	"boy-scout/internal/tscomplexity"
 	"boy-scout/internal/tsfunclen"
 )
 
@@ -159,6 +160,19 @@ type combinedReport struct {
 	Duplication duplication.Report  `json:"duplication"`
 }
 
+// ponytail: one combinedReport struct per language (go/cpp/ts) — generalize to a shared keyed-report type if a 4th language shows up.
+type cppCombinedReport struct {
+	Funclen cppfunclen.Report `json:"funclen"`
+	Filelen filelen.Report    `json:"filelen"`
+	Linelen linelen.Report    `json:"linelen"`
+}
+
+type tsCombinedReport struct {
+	Funclen tsfunclen.Report `json:"funclen"`
+	Filelen filelen.Report   `json:"filelen"`
+	Linelen linelen.Report   `json:"linelen"`
+}
+
 func renderAllText(report combinedReport, stdout, stderr io.Writer) int {
 	writeGofunclenLines(stdout, "[gofunclen] ", report.Gofunclen)
 	writeComplexityLines(stdout, "[complexity] ", report.Complexity)
@@ -180,6 +194,52 @@ func renderAllJSON(report combinedReport, stdout, stderr io.Writer) int {
 
 	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations) + len(report.Duplication.Violations)
 	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped) + len(report.Duplication.Skipped)
+
+	return exitCodeFor(totalViolations, totalSkipped)
+}
+
+func renderCppAllText(report cppCombinedReport, stdout, stderr io.Writer) int {
+	writeCppFunclenLines(stdout, "[funclen] ", report.Funclen)
+	writeFilelenLines(stdout, "[filelen] ", report.Filelen)
+	writeLinelenLines(stdout, "[linelen] ", report.Linelen)
+
+	totalViolations := len(report.Funclen.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations)
+	totalSkipped := len(report.Funclen.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped)
+
+	return exitCodeFor(totalViolations, totalSkipped)
+}
+
+func renderCppAllJSON(report cppCombinedReport, stdout, stderr io.Writer) int {
+	data, err := json.Marshal(report)
+	assertutil.Assertf(err == nil, "json.Marshal failed: %v", err)
+
+	fmt.Fprintf(stdout, "%s\n", string(data))
+
+	totalViolations := len(report.Funclen.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations)
+	totalSkipped := len(report.Funclen.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped)
+
+	return exitCodeFor(totalViolations, totalSkipped)
+}
+
+func renderTsAllText(report tsCombinedReport, stdout, stderr io.Writer) int {
+	writeTsFunclenLines(stdout, "[funclen] ", report.Funclen)
+	writeFilelenLines(stdout, "[filelen] ", report.Filelen)
+	writeLinelenLines(stdout, "[linelen] ", report.Linelen)
+
+	totalViolations := len(report.Funclen.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations)
+	totalSkipped := len(report.Funclen.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped)
+
+	return exitCodeFor(totalViolations, totalSkipped)
+}
+
+func renderTsAllJSON(report tsCombinedReport, stdout, stderr io.Writer) int {
+	data, err := json.Marshal(report)
+	assertutil.Assertf(err == nil, "json.Marshal failed: %v", err)
+
+	fmt.Fprintf(stdout, "%s\n", string(data))
+
+	totalViolations := len(report.Funclen.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations)
+	totalSkipped := len(report.Funclen.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -312,5 +372,26 @@ func renderTsFunclenText(report tsfunclen.Report, stdout, stderr io.Writer) int 
 }
 
 func renderTsFunclenJSON(report tsfunclen.Report, stdout, stderr io.Writer) int {
+	return renderReportAsJSON(report, stdout, stderr)
+}
+
+// writeTsComplexityLines writes a ts complexity report's violations and excluded entries to w.
+func writeTsComplexityLines(w io.Writer, prefix string, report tscomplexity.Report) {
+	writeLines(w, prefix, report.Violations, report.ExcludedFuncs,
+		func(v tscomplexity.Violation) string {
+			return fmt.Sprintf("%s:%d: function %s has complexity=%d (limit %d)", v.File, v.Line, v.Func, v.Complexity, v.Limit)
+		},
+		func(exc tscomplexity.ExcludedFunc) string {
+			return fmt.Sprintf("%s:%d: function %s excluded (%s)", exc.File, exc.Line, exc.Func, exc.Reason)
+		},
+	)
+}
+
+func renderTsComplexityText(report tscomplexity.Report, stdout, stderr io.Writer) int {
+	writeTsComplexityLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderTsComplexityJSON(report tscomplexity.Report, stdout, stderr io.Writer) int {
 	return renderReportAsJSON(report, stdout, stderr)
 }

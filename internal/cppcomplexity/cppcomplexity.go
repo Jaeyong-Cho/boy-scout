@@ -210,11 +210,11 @@ func cyclomaticComplexity(funcNode *sitter.Node, source []byte) int {
 	return complexity
 }
 
-// scanFileForCppComplexity parses a C++ file and evaluates complexity of every function
-func scanFileForCppComplexity(filePath string, maxComplexity int, opts Options) (violations []Violation, excludedFuncs []ExcludedFunc, skipped *SkippedFile) {
+// parseCppFile reads and parses a C++ file, returning the source bytes and AST tree.
+func parseCppFile(filePath string) ([]byte, *sitter.Tree, error) {
 	src, err := srcfiles.ReadFile(filePath)
 	if err != nil {
-		return nil, nil, &SkippedFile{File: filePath, Error: err.Error()}
+		return nil, nil, err
 	}
 
 	parser := sitter.NewParser()
@@ -222,15 +222,14 @@ func scanFileForCppComplexity(filePath string, maxComplexity int, opts Options) 
 	parser.SetLanguage(cpp.GetLanguage())
 
 	tree := parser.Parse(nil, src)
-	defer tree.Close()
+	return src, tree, nil
+}
 
-	rootNode := tree.RootNode()
-	if hasErrorNode(rootNode) {
-		return nil, nil, &SkippedFile{File: filePath, Error: "parse error"}
-	}
-
-	var functions []funcDef
-	findFunctionDefinitions(rootNode, src, &functions)
+// processFunctionsForComplexity checks each function in the list for excluded patterns
+// and collects violations for those exceeding the complexity limit.
+func processFunctionsForComplexity(filePath string, functions []funcDef, src []byte, maxComplexity int, opts Options) ([]Violation, []ExcludedFunc) {
+	var violations []Violation
+	var excludedFuncs []ExcludedFunc
 
 	for _, fn := range functions {
 		complexity := cyclomaticComplexity(fn.node, src)
@@ -270,6 +269,26 @@ func scanFileForCppComplexity(filePath string, maxComplexity int, opts Options) 
 		}
 	}
 
+	return violations, excludedFuncs
+}
+
+// scanFileForCppComplexity parses a C++ file and evaluates complexity of every function
+func scanFileForCppComplexity(filePath string, maxComplexity int, opts Options) (violations []Violation, excludedFuncs []ExcludedFunc, skipped *SkippedFile) {
+	src, tree, err := parseCppFile(filePath)
+	if err != nil {
+		return nil, nil, &SkippedFile{File: filePath, Error: err.Error()}
+	}
+	defer tree.Close()
+
+	rootNode := tree.RootNode()
+	if hasErrorNode(rootNode) {
+		return nil, nil, &SkippedFile{File: filePath, Error: "parse error"}
+	}
+
+	var functions []funcDef
+	findFunctionDefinitions(rootNode, src, &functions)
+
+	violations, excludedFuncs = processFunctionsForComplexity(filePath, functions, src, maxComplexity, opts)
 	return violations, excludedFuncs, nil
 }
 
