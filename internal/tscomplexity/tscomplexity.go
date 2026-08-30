@@ -70,6 +70,24 @@ func getLanguageForFile(filePath string) *sitter.Language {
 }
 
 // cyclomaticComplexity walks a function's body and counts decision points
+// complexityIncrementForNodeType returns 1 if the node type increments cyclomatic complexity, 0 otherwise.
+func complexityIncrementForNodeType(nodeType string, node *sitter.Node, source []byte) int {
+	switch nodeType {
+	case "if_statement", "for_statement", "for_in_statement", "while_statement", "do_statement",
+		"switch_case", "catch_clause", "ternary_expression":
+		return 1
+	case "binary_expression":
+		// +1 for logical operators && and ||
+		if operatorNode := node.ChildByFieldName("operator"); operatorNode != nil {
+			opText := string(source[operatorNode.StartByte() : operatorNode.EndByte()])
+			if opText == "&&" || opText == "||" {
+				return 1
+			}
+		}
+	}
+	return 0
+}
+
 func cyclomaticComplexity(funcNode *sitter.Node, source []byte) int {
 	complexity := 1 // Base complexity for every function
 
@@ -80,49 +98,7 @@ func cyclomaticComplexity(funcNode *sitter.Node, source []byte) int {
 			return
 		}
 
-		nodeType := node.Type()
-
-		// +1 for if statements
-		if nodeType == "if_statement" {
-			complexity++
-		}
-		// +1 for classic for loops
-		if nodeType == "for_statement" {
-			complexity++
-		}
-		// +1 for for...of and for...in loops (same node type)
-		if nodeType == "for_in_statement" {
-			complexity++
-		}
-		// +1 for while loops
-		if nodeType == "while_statement" {
-			complexity++
-		}
-		// +1 for do-while loops
-		if nodeType == "do_statement" {
-			complexity++
-		}
-		// +1 for case statements (but not default — switch_default has its own type)
-		if nodeType == "switch_case" {
-			complexity++
-		}
-		// +1 for catch clauses
-		if nodeType == "catch_clause" {
-			complexity++
-		}
-		// +1 for ternary operator
-		if nodeType == "ternary_expression" {
-			complexity++
-		}
-		// +1 for logical operators && and ||
-		if nodeType == "binary_expression" {
-			if operatorNode := node.ChildByFieldName("operator"); operatorNode != nil {
-				opText := string(source[operatorNode.StartByte() : operatorNode.EndByte()])
-				if opText == "&&" || opText == "||" {
-					complexity++
-				}
-			}
-		}
+		complexity += complexityIncrementForNodeType(node.Type(), node, source)
 
 		// Recurse into children (do NOT specially skip nested functions—their code counts toward enclosing function)
 		for i := uint32(0); i < node.ChildCount(); i++ {
