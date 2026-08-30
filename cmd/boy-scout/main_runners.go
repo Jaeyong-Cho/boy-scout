@@ -7,6 +7,7 @@ import (
 
 	"boy-scout/internal/duplication"
 	"boy-scout/internal/filelen"
+	"boy-scout/internal/gocohesion"
 	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
 	"boy-scout/internal/linelen"
@@ -104,6 +105,27 @@ var goComplexityCfg = CheckerConfig{
 	},
 }
 
+var goCohesionCfg = CheckerConfig{
+	Name: "cohesion",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := gocohesion.Options{
+					ExcludeFiles: excludeFiles,
+					Debug:        debug,
+				}
+				return gocohesion.Check(paths, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderCohesionJSON(report.(gocohesion.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderCohesionText(report.(gocohesion.Report), stdout, stderr)
+	},
+}
+
 var goFilelenCfg = CheckerConfig{
 	Name: "filelen",
 	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
@@ -184,6 +206,10 @@ func runGoComplexity(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goComplexityCfg, args, stdout, stderr)
 }
 
+func runGoCohesion(args []string, stdout, stderr io.Writer) int {
+	return runCheck(goCohesionCfg, args, stdout, stderr)
+}
+
 func runGoFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goFilelenCfg, args, stdout, stderr)
 }
@@ -210,7 +236,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	gofunclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		reportError(err, stderr)
 		return 2
@@ -219,6 +245,7 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	combined := combinedReport{
 		Gofunclen:   gofunclenReport,
 		Complexity:  complexityReport,
+		Cohesion:    cohesionReport,
 		Filelen:     filelenReport,
 		Linelen:     linelenReport,
 		Duplication: duplicationReport,
@@ -231,11 +258,20 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	return renderAllText(combined, stdout, stderr)
 }
 
+func checkAllCohesion(paths []string, excludeFiles []string, debug bool) (gocohesion.Report, error) {
+	opts := gocohesion.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
+	return gocohesion.Check(paths, opts)
+}
+
 // checkAll runs all checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, gocomplexity.Report, filelen.Report, linelen.Report, duplication.Report, error) {
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, gocomplexity.Report, gocohesion.Report, filelen.Report, linelen.Report, duplication.Report, error) {
 	var (
 		gofunclenReport   gofunclen.Report
 		complexityReport  gocomplexity.Report
+		cohesionReport    gocohesion.Report
 		filelenReport     filelen.Report
 		linelenReport     linelen.Report
 		duplicationReport duplication.Report
@@ -250,6 +286,11 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 		func() error {
 			var err error
 			complexityReport, err = checkAllComplexity(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			cohesionReport, err = checkAllCohesion(paths, excludeFiles, debug)
 			return err
 		},
 		func() error {
@@ -271,11 +312,11 @@ func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (
 
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, err
+			return gofunclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err
 		}
 	}
 
-	return gofunclenReport, complexityReport, filelenReport, linelenReport, duplicationReport, nil
+	return gofunclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, nil
 }
 
 func checkAllGofunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, error) {

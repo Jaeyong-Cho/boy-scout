@@ -7,13 +7,16 @@ import (
 	"reflect"
 
 	"boy-scout/internal/assertutil"
+	"boy-scout/internal/cppcohesion"
 	"boy-scout/internal/cppcomplexity"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/duplication"
 	"boy-scout/internal/filelen"
+	"boy-scout/internal/gocohesion"
 	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
 	"boy-scout/internal/linelen"
+	"boy-scout/internal/tscohesion"
 	"boy-scout/internal/tscomplexity"
 	"boy-scout/internal/tsfunclen"
 )
@@ -155,6 +158,7 @@ func renderDuplicationJSON(report duplication.Report, stdout, stderr io.Writer) 
 type combinedReport struct {
 	Gofunclen   gofunclen.Report    `json:"gofunclen"`
 	Complexity  gocomplexity.Report `json:"complexity"`
+	Cohesion    gocohesion.Report   `json:"cohesion"`
 	Filelen     filelen.Report      `json:"filelen"`
 	Linelen     linelen.Report      `json:"linelen"`
 	Duplication duplication.Report  `json:"duplication"`
@@ -176,12 +180,13 @@ type tsCombinedReport struct {
 func renderAllText(report combinedReport, stdout, stderr io.Writer) int {
 	writeGofunclenLines(stdout, "[gofunclen] ", report.Gofunclen)
 	writeComplexityLines(stdout, "[complexity] ", report.Complexity)
+	writeCohesionLines(stdout, "[cohesion] ", report.Cohesion)
 	writeFilelenLines(stdout, "[filelen] ", report.Filelen)
 	writeLinelenLines(stdout, "[linelen] ", report.Linelen)
 	writeDuplicationLines(stdout, "[duplication] ", report.Duplication)
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations) + len(report.Duplication.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped) + len(report.Duplication.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Cohesion.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations) + len(report.Duplication.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Cohesion.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped) + len(report.Duplication.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -192,8 +197,8 @@ func renderAllJSON(report combinedReport, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "%s\n", string(data))
 
-	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations) + len(report.Duplication.Violations)
-	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped) + len(report.Duplication.Skipped)
+	totalViolations := len(report.Gofunclen.Violations) + len(report.Complexity.Violations) + len(report.Cohesion.Violations) + len(report.Filelen.Violations) + len(report.Linelen.Violations) + len(report.Duplication.Violations)
+	totalSkipped := len(report.Gofunclen.Skipped) + len(report.Complexity.Skipped) + len(report.Cohesion.Skipped) + len(report.Filelen.Skipped) + len(report.Linelen.Skipped) + len(report.Duplication.Skipped)
 
 	return exitCodeFor(totalViolations, totalSkipped)
 }
@@ -308,6 +313,28 @@ func renderComplexityJSON(report gocomplexity.Report, stdout, stderr io.Writer) 
 	return renderReportAsJSON(report, stdout, stderr)
 }
 
+// writeCohesionLines writes a cohesion report's violations to w,
+// each line prefixed with prefix (e.g. "[cohesion] " when combined with other checks).
+func writeCohesionLines(w io.Writer, prefix string, report gocohesion.Report) {
+	for _, v := range report.Violations {
+		worstLevel := gocohesion.WorstLevel(v)
+		fmt.Fprintf(w, "%s%s:%d: %s [%s] LCOM4=%d TCC=%.2f LCC=%.2f\n",
+			prefix, v.File, v.Line, v.Class, worstLevel, v.LCOM4, v.TCC, v.LCC)
+	}
+	for _, f := range report.Skipped {
+		fmt.Fprintf(w, "%sskipped: %s (%v)\n", prefix, f.File, f.Error)
+	}
+}
+
+func renderCohesionText(report gocohesion.Report, stdout, stderr io.Writer) int {
+	writeCohesionLines(stdout, "", report)
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderCohesionJSON(report gocohesion.Report, stdout, stderr io.Writer) int {
+	return renderReportAsJSON(report, stdout, stderr)
+}
+
 // writeCppFunclenLines writes a cpp funclen report's violations and excluded entries to w.
 func writeCppFunclenLines(w io.Writer, prefix string, report cppfunclen.Report) {
 	writeLines(w, prefix, report.Violations, report.ExcludedFuncs,
@@ -349,6 +376,54 @@ func renderCppComplexityText(report cppcomplexity.Report, stdout, stderr io.Writ
 }
 
 func renderCppComplexityJSON(report cppcomplexity.Report, stdout, stderr io.Writer) int {
+	return renderReportAsJSON(report, stdout, stderr)
+}
+
+func renderCppCohesionText(report cppcohesion.Report, stdout, stderr io.Writer) int {
+	for _, v := range report.Violations {
+		levels := []string{v.LCOM4Level, v.TCCLevel, v.LCCLevel}
+		worst := "good"
+		for _, l := range levels {
+			if l == "danger" {
+				worst = "danger"
+			} else if l == "warning" && worst != "danger" {
+				worst = "warning"
+			}
+		}
+		fmt.Fprintf(stdout, "%s:%d: %s [%s] LCOM4=%d TCC=%.2f LCC=%.2f\n",
+			v.File, v.Line, v.Class, worst, v.LCOM4, v.TCC, v.LCC)
+	}
+	for _, f := range report.Skipped {
+		fmt.Fprintf(stdout, "skipped: %s (%v)\n", f.File, f.Error)
+	}
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderCppCohesionJSON(report cppcohesion.Report, stdout, stderr io.Writer) int {
+	return renderReportAsJSON(report, stdout, stderr)
+}
+
+func renderTsCohesionText(report tscohesion.Report, stdout, stderr io.Writer) int {
+	for _, v := range report.Violations {
+		levels := []string{v.LCOM4Level, v.TCCLevel, v.LCCLevel}
+		worst := "good"
+		for _, l := range levels {
+			if l == "danger" {
+				worst = "danger"
+			} else if l == "warning" && worst != "danger" {
+				worst = "warning"
+			}
+		}
+		fmt.Fprintf(stdout, "%s:%d: %s [%s] LCOM4=%d TCC=%.2f LCC=%.2f\n",
+			v.File, v.Line, v.Class, worst, v.LCOM4, v.TCC, v.LCC)
+	}
+	for _, f := range report.Skipped {
+		fmt.Fprintf(stdout, "skipped: %s (%v)\n", f.File, f.Error)
+	}
+	return exitCodeFor(len(report.Violations), len(report.Skipped))
+}
+
+func renderTsCohesionJSON(report tscohesion.Report, stdout, stderr io.Writer) int {
 	return renderReportAsJSON(report, stdout, stderr)
 }
 

@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"boy-scout/internal/assertutil"
+	"boy-scout/internal/cppcohesion"
 	"boy-scout/internal/cppcomplexity"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/filelen"
@@ -103,6 +104,27 @@ var cppComplexityCfg = CheckerConfig{
 	},
 }
 
+var cppCohesionCfg = CheckerConfig{
+	Name: "cohesion",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := cppcohesion.Options{
+					ExcludeFiles: excludeFiles,
+					Debug:        debug,
+				}
+				return cppcohesion.Check(paths, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderCppCohesionJSON(report.(cppcohesion.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderCppCohesionText(report.(cppcohesion.Report), stdout, stderr)
+	},
+}
+
 // Thin wrappers that dispatch to configs.
 func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppFilelenCfg, args, stdout, stderr)
@@ -118,6 +140,10 @@ func runCppFunclen(args []string, stdout, stderr io.Writer) int {
 
 func runCppComplexity(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppComplexityCfg, args, stdout, stderr)
+}
+
+func runCppCohesion(args []string, stdout, stderr io.Writer) int {
+	return runCheck(cppCohesionCfg, args, stdout, stderr)
 }
 
 // runCppAll runs all C++ checks and combines their reports.

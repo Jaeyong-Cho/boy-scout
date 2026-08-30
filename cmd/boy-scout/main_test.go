@@ -2177,3 +2177,140 @@ func TestRun_TsComplexityRespectsFlagOverride(t *testing.T) {
 	}
 }
 
+func TestRun_GoCohesionReportsViolation(t *testing.T) {
+	// AC7: Low-cohesion struct should be reported
+	tmpDir := t.TempDir()
+	src := `package main
+
+type Foo struct{
+	x, y int
+}
+
+func (f *Foo) SetX(v int) { f.x = v }
+func (f *Foo) SetY(v int) { f.y = v }
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "cohesion", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	var report interface{}
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
+	}
+
+	m := report.(map[string]interface{})
+	violations, ok := m["violations"].([]interface{})
+	if !ok || len(violations) != 1 {
+		t.Errorf("expected 1 violation, got %d", len(violations))
+	}
+
+	if len(violations) > 0 {
+		v := violations[0].(map[string]interface{})
+		if class, ok := v["class"].(string); !ok || class != "Foo" {
+			t.Errorf("expected class 'Foo', got '%v'", v["class"])
+		}
+	}
+
+	if exitCode == 0 {
+		t.Errorf("expected non-zero exit code for violations, got 0")
+	}
+}
+
+func TestRun_AllIncludesCohesion(t *testing.T) {
+	// AC11: `go all` includes cohesion check
+	tmpDir := t.TempDir()
+	initModule(t, tmpDir)
+
+	// No violations
+	src := `package main
+
+type Good struct{
+	x int
+}
+
+func (g *Good) Touch() { g.x = 1 }
+`
+	if err := os.WriteFile("test.go", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	var report interface{}
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
+	}
+
+	m := report.(map[string]interface{})
+	if _, ok := m["cohesion"]; !ok {
+		t.Errorf("expected 'cohesion' key in JSON output, keys: %v", m)
+	}
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 for clean code, got %d", exitCode)
+	}
+}
+
+func TestRun_CppTsAllExcludesCohesion(t *testing.T) {
+	// AC12: cpp/ts all commands do not include cohesion
+	tmpDir := t.TempDir()
+
+	// Create a simple C++ file
+	cppSrc := `
+class MyClass {
+public:
+  void method1() {}
+  void method2() {}
+};
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.cpp"), []byte(cppSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	_ = run([]string{"cpp", "all", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	var report interface{}
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
+	}
+
+	m := report.(map[string]interface{})
+	if _, ok := m["cohesion"]; ok {
+		t.Errorf("expected no 'cohesion' key in C++ all output, but found one")
+	}
+
+	// Create a simple TypeScript file
+	tsSrc := `
+export class MyClass {
+  method1() {}
+  method2() {}
+}
+`
+	tsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tsDir, "test.ts"), []byte(tsSrc), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	_ = run([]string{"ts", "all", "--format=json", tsDir}, &stdoutBuf, &stderrBuf)
+
+	output = stdoutBuf.String()
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
+	}
+
+	m = report.(map[string]interface{})
+	if _, ok := m["cohesion"]; ok {
+		t.Errorf("expected no 'cohesion' key in TS all output, but found one")
+	}
+}
+
