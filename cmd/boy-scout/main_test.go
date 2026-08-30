@@ -1341,7 +1341,7 @@ func VeryComplex(x int) string {
 func TestRun_ComplexityAtLimitIsCompliant(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create a function with exactly complexity 10 (the default limit)
+	// Create a function with exactly complexity 6 (the default limit)
 	src := `package main
 
 func AtLimit(x int) string {
@@ -1350,15 +1350,7 @@ func AtLimit(x int) string {
 			if x > 3 {
 				if x > 4 {
 					if x > 5 {
-						if x > 6 {
-							if x > 7 {
-								if x > 8 {
-									if x > 9 {
-										return "deep"
-									}
-								}
-							}
-						}
+						return "deep"
 					}
 				}
 			}
@@ -1607,6 +1599,159 @@ func TestRun_AllIncludesLinelen(t *testing.T) {
 
 	if !strings.Contains(jsonOutput, "\"linelen\"") {
 		t.Errorf("expected '\"linelen\"' key in JSON output, got:\nstdout: %s\nstderr: %s", jsonOutput, stderr)
+	}
+}
+
+func TestRun_CppComplexityFlagViolation(t *testing.T) {
+	// Test that cpp complexity flags a complex function at limit 6
+	tmpDir := t.TempDir()
+	src := `#include <string>
+std::string parseStatement(const std::string& input) {
+  if (input[0] == 'i') {
+    if (input.length() > 1) {
+      if (input[1] == 'f') {
+        if (input.length() > 2) {
+          if (input[2] == ' ') {
+            if (input.find("then") != std::string::npos) {
+              return "if-then-statement";
+            }
+          }
+        }
+      }
+    }
+  }
+  return "statement";
+}`
+	if err := os.WriteFile(tmpDir+"/test.cpp", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"cpp", "complexity", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Parse JSON to verify
+	var report interface{}
+	err := json.Unmarshal([]byte(output), &report)
+	if err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
+	}
+
+	m := report.(map[string]interface{})
+	violations := m["violations"].([]interface{})
+
+	if len(violations) != 1 {
+		t.Errorf("expected 1 violation, got %d\noutput: %s", len(violations), output)
+	}
+
+	if len(violations) > 0 {
+		v := violations[0].(map[string]interface{})
+		if v["func"].(string) != "parseStatement" {
+			t.Errorf("expected function 'parseStatement', got '%s'", v["func"])
+		}
+		if int(v["complexity"].(float64)) != 7 {
+			t.Errorf("expected complexity 7, got %d", int(v["complexity"].(float64)))
+		}
+		if int(v["limit"].(float64)) != 6 {
+			t.Errorf("expected limit 6, got %d", int(v["limit"].(float64)))
+		}
+	}
+
+	// Non-zero exit code for violations
+	if exitCode == 0 {
+		t.Errorf("expected non-zero exit code for violations, got 0")
+	}
+}
+
+func TestRun_CppComplexityRespectsFlagOverride(t *testing.T) {
+	// Test that --max-complexity flag overrides the default
+	tmpDir := t.TempDir()
+	src := `#include <string>
+std::string parseStatement(const std::string& input) {
+  if (input[0] == 'i') {
+    if (input.length() > 1) {
+      if (input[1] == 'f') {
+        if (input.length() > 2) {
+          if (input[2] == ' ') {
+            if (input.find("then") != std::string::npos) {
+              return "if-then-statement";
+            }
+          }
+        }
+      }
+    }
+  }
+  return "statement";
+}`
+	if err := os.WriteFile(tmpDir+"/test.cpp", []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"cpp", "complexity", "--format=json", "--max-complexity=10", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	var report interface{}
+	err := json.Unmarshal([]byte(output), &report)
+	if err != nil {
+		t.Fatalf("failed to parse JSON output: %v", err)
+	}
+
+	m := report.(map[string]interface{})
+	violations := m["violations"].([]interface{})
+
+	if len(violations) != 0 {
+		t.Errorf("expected 0 violations with limit 10, got %d", len(violations))
+	}
+
+	// No violations should result in zero exit code
+	if exitCode != 0 {
+		t.Errorf("expected zero exit code for no violations, got %d", exitCode)
+	}
+}
+
+func TestRun_GoAllComplexityUsesNewDefault(t *testing.T) {
+	// Test that go all uses the new default of 6 for complexity
+	// Create a function with complexity 7 in a temp dir
+	tmpDir := t.TempDir()
+	src := `package main
+
+func Complex() {
+	if true {
+		if true {
+			if true {
+				if true {
+					if true {
+						if true {
+							if true {}
+						}
+					}
+				}
+			}
+		}
+	}
+}`
+	tmpFile := tmpDir + "/main.go"
+	if err := os.WriteFile(tmpFile, []byte(src), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"go", "all", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+
+	// Should report complexity violation at the new limit of 6
+	if !strings.Contains(output, "Complex") || !strings.Contains(output, "complexity") {
+		t.Errorf("expected complexity violation in 'go all' output, got:\n%s", output)
+	}
+
+	// Non-zero exit code for violations
+	if exitCode == 0 {
+		t.Errorf("expected non-zero exit code for violations in 'go all', got 0")
 	}
 }
 

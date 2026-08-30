@@ -84,7 +84,7 @@ var goFunclenCfg = CheckerConfig{
 var goComplexityCfg = CheckerConfig{
 	Name: "complexity",
 	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-		maxComplexity := fs.Int("max-complexity", 10, "maximum cyclomatic complexity per function")
+		maxComplexity := fs.Int("max-complexity", 6, "maximum cyclomatic complexity per function")
 		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
 			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
 				opts := gocomplexity.Options{
@@ -293,7 +293,7 @@ func checkAllComplexity(paths []string, excludeFiles, excludeFuncs []string, deb
 		ExcludeFuncs: excludeFuncs,
 		Debug:        debug,
 	}
-	return gocomplexity.Check(paths, 10, opts)
+	return gocomplexity.Check(paths, 6, opts)
 }
 
 func checkAllFilelen(paths []string, excludeFiles []string, debug bool) (filelen.Report, error) {
