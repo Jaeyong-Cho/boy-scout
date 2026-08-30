@@ -73,116 +73,158 @@ func Check(paths []string, opts Options) (Report, error) {
 	return report, nil
 }
 
+// classPattern matches a TypeScript class declaration line.
+var classPattern = regexp.MustCompile(`^\s*(?:export\s+)?class\s+(\w+)\s*(?:\{|\s)`)
+
 // analyzeFile extracts classes from the source and checks their cohesion
 func analyzeFile(filePath string, source []byte, report *Report) error {
 	lines := strings.Split(string(source), "\n")
 
-	// Simple regex-based class extraction for TypeScript
-	classPattern := regexp.MustCompile(`^\s*(?:export\s+)?class\s+(\w+)\s*(?:\{|\s)`)
-
 	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		matches := classPattern.FindStringSubmatch(line)
+		matches := classPattern.FindStringSubmatch(lines[i])
 		if matches == nil {
 			continue
 		}
 
-		className := matches[1]
-		classStartLine := i + 1
 		ci := &classInfo{
-			Name:    className,
+			Name:    matches[1],
 			File:    filePath,
-			Line:    classStartLine,
+			Line:    i + 1,
 			Fields:  make(map[string]bool),
 			Methods: make(map[string]*methodInfo),
 		}
 
-		// Find the end of the class (closing brace)
-		braceCount := 0
-		classEndLine := len(lines)
+		classEndLine := findClassEndLine(lines, i)
+		extractClassMembers(lines, i+1, classEndLine, ci)
 
-		for j := i; j < len(lines); j++ {
-			for _, c := range lines[j] {
-				if c == '{' {
-					braceCount++
-				} else if c == '}' {
-					braceCount--
-				}
-			}
-			if braceCount == 0 && j > i {
-				classEndLine = j
-				break
-			}
-		}
-
-		// Extract fields and methods from the class body (lines i+1 to classEndLine-1)
-		for j := i + 1; j < classEndLine; j++ {
-			classLineContent := strings.TrimSpace(lines[j])
-
-			// Extract fields: look for "name: type;"
-			if strings.Contains(classLineContent, ":") && !strings.Contains(classLineContent, "(") {
-				parts := strings.Split(classLineContent, ":")
-				if len(parts) > 0 {
-					fieldName := strings.TrimSpace(parts[0])
-					if isValidIdentifier(fieldName) && !isKeyword(fieldName) {
-						ci.Fields[fieldName] = true
-					}
-				}
-			}
-
-			// Extract method signatures: look for "name(...)"
-			if strings.Contains(classLineContent, "(") && !strings.HasPrefix(classLineContent, "//") {
-				methodPattern := regexp.MustCompile(`(?:async\s+)?(?:public|private|protected|static)?\s*(?:async\s+)?(\w+)\s*\(`)
-				methodMatches := methodPattern.FindStringSubmatch(classLineContent)
-
-				if methodMatches != nil && len(methodMatches) > 1 {
-					methodName := methodMatches[1]
-					if !isKeyword(methodName) {
-						// Extract method body
-						methodBody := extractMethodBody(lines, j)
-						if methodBody != "" {
-							mi := &methodInfo{
-								Name:   methodName,
-								Fields: make(map[string]bool),
-								Calls:  make(map[string]bool),
-							}
-							analyzeMethodBody(methodBody, ci.Fields, ci.Methods, mi)
-							ci.Methods[methodName] = mi
-						}
-					}
-				}
-			}
-		}
-
-		// Score if >= 2 methods
-		if len(ci.Methods) >= 2 {
-			methods := make([]cohesion.Method, 0, len(ci.Methods))
-			for methodName, mi := range ci.Methods {
-				methods = append(methods, cohesion.Method{
-					Name:   methodName,
-					Fields: mi.Fields,
-					Calls:  mi.Calls,
-				})
-			}
-
-			score := cohesion.Compute(methods)
-			if cohesion.Worst(score) != "good" {
-				report.Violations = append(report.Violations, Violation{
-					File:       filePath,
-					Line:       ci.Line,
-					Class:      ci.Name,
-					LCOM4:      score.LCOM4,
-					LCOM4Level: score.LCOM4Level,
-					TCC:        score.TCC,
-					TCCLevel:   score.TCCLevel,
-					LCC:        score.LCC,
-					LCCLevel:   score.LCCLevel,
-				})
-			}
+		if v := scoreClass(ci); v != nil {
+			report.Violations = append(report.Violations, *v)
 		}
 	}
 
 	return nil
+}
+
+// braceDelta returns the net change in brace depth contributed by line
+// (count of '{' minus count of '}').
+func braceDelta(line string) int {
+	delta := 0
+	for _, c := range line {
+		if c == '{' {
+			delta++
+		} else if c == '}' {
+			delta--
+		}
+	}
+	return delta
+}
+
+// findClassEndLine returns the line index of the closing brace that matches
+// the class opening at startLine, by counting braces.
+func findClassEndLine(lines []string, startLine int) int {
+	braceCount := 0
+	for j := startLine; j < len(lines); j++ {
+		braceCount += braceDelta(lines[j])
+		if braceCount == 0 && j > startLine {
+			return j
+		}
+	}
+	return len(lines)
+}
+
+// extractField records line as a class field on ci if it looks like a
+// TypeScript field declaration ("name: type;").
+func extractField(line string, ci *classInfo) {
+	if !strings.Contains(line, ":") || strings.Contains(line, "(") {
+		return
+	}
+	parts := strings.Split(line, ":")
+	if len(parts) == 0 {
+		return
+	}
+	fieldName := strings.TrimSpace(parts[0])
+	if isValidIdentifier(fieldName) && !isKeyword(fieldName) {
+		ci.Fields[fieldName] = true
+	}
+}
+
+// matchMethodName returns the method name declared on line and true, or
+// ("", false) if line doesn't look like a TypeScript method signature.
+func matchMethodName(line string, methodPattern *regexp.Regexp) (string, bool) {
+	if !strings.Contains(line, "(") || strings.HasPrefix(line, "//") {
+		return "", false
+	}
+	methodMatches := methodPattern.FindStringSubmatch(line)
+	if methodMatches == nil || len(methodMatches) <= 1 || isKeyword(methodMatches[1]) {
+		return "", false
+	}
+	return methodMatches[1], true
+}
+
+// extractMethod records line (at lines[j]) as a class method on ci if it
+// looks like a TypeScript method signature ("name(...)").
+func extractMethod(lines []string, j int, line string, pattern *regexp.Regexp, ci *classInfo) {
+	methodName, ok := matchMethodName(line, pattern)
+	if !ok {
+		return
+	}
+
+	methodBody := extractMethodBody(lines, j)
+	if methodBody == "" {
+		return
+	}
+	mi := &methodInfo{
+		Name:   methodName,
+		Fields: make(map[string]bool),
+		Calls:  make(map[string]bool),
+	}
+	analyzeMethodBody(methodBody, ci.Fields, ci.Methods, mi)
+	ci.Methods[methodName] = mi
+}
+
+// extractClassMembers scans lines[start:end) (a class body) and populates
+// ci.Fields and ci.Methods with the fields and methods it finds.
+func extractClassMembers(lines []string, start, end int, ci *classInfo) {
+	methodPattern := regexp.MustCompile(`(?:async\s+)?(?:public|private|protected|static)?\s*(?:async\s+)?(\w+)\s*\(`)
+
+	for j := start; j < end; j++ {
+		line := strings.TrimSpace(lines[j])
+		extractField(line, ci)
+		extractMethod(lines, j, line, methodPattern, ci)
+	}
+}
+
+// scoreClass computes the cohesion score for ci and returns the resulting
+// Violation, or nil if ci has too few methods to score or isn't a violation.
+func scoreClass(ci *classInfo) *Violation {
+	if len(ci.Methods) < 2 {
+		return nil
+	}
+
+	methods := make([]cohesion.Method, 0, len(ci.Methods))
+	for methodName, mi := range ci.Methods {
+		methods = append(methods, cohesion.Method{
+			Name:   methodName,
+			Fields: mi.Fields,
+			Calls:  mi.Calls,
+		})
+	}
+
+	score := cohesion.Compute(methods)
+	if cohesion.Worst(score) == "good" {
+		return nil
+	}
+	return &Violation{
+		File:       ci.File,
+		Line:       ci.Line,
+		Class:      ci.Name,
+		LCOM4:      score.LCOM4,
+		LCOM4Level: score.LCOM4Level,
+		TCC:        score.TCC,
+		TCCLevel:   score.TCCLevel,
+		LCC:        score.LCC,
+		LCCLevel:   score.LCCLevel,
+	}
 }
 
 // extractMethodBody finds the body of a method starting at line startLine
