@@ -15,7 +15,9 @@ boy-scout cpp funclen
 Boy-scout for C++ currently supports:
 
 1. **funclen** — Function length violations
-2. **filelen** — File length violations
+2. **complexity** — Function complexity violations
+3. **filelen** — File length violations
+4. **cohesion** — Class/struct cohesion violations
 
 ## Limitations
 

@@ -10,7 +10,7 @@ Run `go test ./...` once before making any changes to ensure tests are green. Th
 boy-scout go all
 ```
 
-This command checks for all five violation kinds in your Go code.
+This command checks all violation kinds in your Go code.
 
 ## Test Files
 
@@ -21,8 +21,11 @@ Go test files use the `_test.go` suffix. For example: `main_test.go`, `handlers_
 Boy-scout for Go supports the following violation kinds:
 
 1. **funclen** (or `gofunclen`) — Function length violations
-2. **filelen** — File length violations
-3. **duplication** — Duplicate code pattern violations
+2. **complexity** — Function complexity violations
+3. **filelen** — File length violations
+4. **cohesion** — Struct/interface cohesion violations
+5. **linelen** — Line length violations
+6. **duplication** — Duplicate code pattern violations
 
 ## Ignore Comments
 

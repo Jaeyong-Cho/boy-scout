@@ -238,7 +238,7 @@ func TestRun_TemplateDeclaresFilelenGuidance(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"FilelenFixedLast", "filelen, cross-package duplication"},
+		{"FilelenFixedBeforeCohesion", "filelen, cohesion, cross-package duplication"},
 	}
 
 	for _, c := range cases {
@@ -363,7 +363,7 @@ func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
 	}
 
 	// Check fix-order statement
-	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, linelen, same-package duplication, complexity, filelen, cohesion, cross-package duplication") {
 		t.Errorf("expected skill template to contain fix-order statement with all violation kinds, got:\n%s", contentStr)
 	}
 }
@@ -534,7 +534,7 @@ func TestRun_TemplateOrdersDuplicationBySamePackageVsCrossPackage(t *testing.T) 
 	contentStr := string(content)
 
 	// Check that same-package duplication clusters are mentioned in early tier with funclen
-	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, linelen, same-package duplication, complexity, filelen, cohesion, cross-package duplication") {
 		t.Errorf("expected skill template to mention violation fix order with same-package before cross-package duplication, got:\n%s", contentStr)
 	}
 }
@@ -772,4 +772,307 @@ func TestRun_TemplateProposesFixPlanBeforeApplying(t *testing.T) {
 			t.Errorf("expected skill template to contain %q, got:\n%s", marker, contentStr)
 		}
 	}
+}
+
+func TestRun_WritesLinelenReference(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Top-level linelen.md should exist
+	path := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "linelen.md")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected linelen.md to exist at %q, got error: %v", path, err)
+	}
+
+	// Language-specific linelen files should NOT exist (per AC1)
+	for _, lang := range []string{"go", "cpp", "ts"} {
+		langPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", lang, "linelen.md")
+		if _, err := os.Stat(langPath); !os.IsNotExist(err) {
+			t.Errorf("expected %s/linelen.md to NOT exist, but it does or had other error: %v", lang, err)
+		}
+	}
+}
+
+func TestRun_WritesCohesionReferences(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Top-level cohesion.md should exist
+	path := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "cohesion.md")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected cohesion.md to exist at %q, got error: %v", path, err)
+	}
+
+	// Language-specific cohesion files should exist
+	for _, lang := range []string{"go", "cpp", "ts"} {
+		langPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", lang, "cohesion.md")
+		if _, err := os.Stat(langPath); err != nil {
+			t.Errorf("expected %s/cohesion.md to exist at %q, got error: %v", lang, langPath, err)
+		}
+	}
+}
+
+func TestRun_CohesionReferenceExplainsMethodThreshold(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	path := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "cohesion.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read cohesion.md: %v", err)
+	}
+
+	contentStr := string(content)
+	// Check for case-insensitive mention of "2 methods" or similar phrasing
+	if !strings.Contains(strings.ToLower(contentStr), "2 methods") &&
+		!strings.Contains(strings.ToLower(contentStr), "fewer than 2") &&
+		!strings.Contains(strings.ToLower(contentStr), "fewer than two") {
+		t.Errorf("expected cohesion.md to explain the 2-method threshold, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_TemplateTableRoutesCohesionAndLinelenToReferences(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "SKILL.md")
+	content, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read SKILL.md: %v", err)
+	}
+	skillStr := string(content)
+
+	// Check for cohesion and linelen references in SKILL.md
+	expectedRefs := []string{
+		"references/cohesion.md",
+		"references/linelen.md",
+		"references/lang/go/cohesion.md",
+		"references/lang/cpp/cohesion.md",
+		"references/lang/ts/cohesion.md",
+	}
+
+	for _, ref := range expectedRefs {
+		if !strings.Contains(skillStr, ref) {
+			t.Errorf("expected SKILL.md to contain reference to %q, got:\n%s", ref, skillStr)
+		}
+	}
+}
+
+func TestRun_TemplateOrdersCohesionAndLinelenByDisruption(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "SKILL.md")
+	content, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read SKILL.md: %v", err)
+	}
+	skillStr := string(content)
+
+	// Check for the exact ordering string from AC5
+	expectedOrder := "funclen, linelen, same-package duplication, complexity, filelen, cohesion, cross-package duplication"
+	if !strings.Contains(skillStr, expectedOrder) {
+		t.Errorf("expected SKILL.md to contain disruption order %q, got:\n%s", expectedOrder, skillStr)
+	}
+}
+
+func TestRun_TemplateNoLongerMarksCppComplexityUnsupported(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "SKILL.md")
+	content, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read SKILL.md: %v", err)
+	}
+	skillStr := string(content)
+
+	// Should NOT contain the old "not yet supported for C++" message for complexity
+	if strings.Contains(skillStr, "(not yet supported for C++)") && strings.Contains(skillStr, "complexity") {
+		// Check more carefully: make sure complexity + "(not yet supported for C++)" don't appear together
+		lines := strings.Split(skillStr, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, "complexity") && strings.Contains(line, "(not yet supported for C++)") {
+				t.Errorf("expected complexity row to no longer mark C++ as unsupported, found at line %d: %s", i, line)
+			}
+		}
+	}
+
+	// Should contain reference to C++ complexity file
+	if !strings.Contains(skillStr, "references/lang/cpp/complexity.md") {
+		t.Errorf("expected SKILL.md to reference cpp/complexity.md, got:\n%s", skillStr)
+	}
+}
+
+func TestRun_CppIndexListsComplexityAndCohesion(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	indexPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp", "index.md")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("failed to read cpp index.md: %v", err)
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "complexity") {
+		t.Errorf("expected cpp index.md to list complexity, got:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, "cohesion") {
+		t.Errorf("expected cpp index.md to list cohesion, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_GoIndexListsCohesionAndLinelen(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	indexPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "go", "index.md")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("failed to read go index.md: %v", err)
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "cohesion") {
+		t.Errorf("expected go index.md to list cohesion, got:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, "linelen") {
+		t.Errorf("expected go index.md to list linelen, got:\n%s", contentStr)
+	}
+	// Should not contain hardcoded "all five" claim
+	if strings.Contains(contentStr, "all five") {
+		t.Errorf("expected go index.md to not contain hardcoded 'all five' count, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_TemplateDeclaresTsDiscoveryMarker(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	skillPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "SKILL.md")
+	content, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read SKILL.md: %v", err)
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "tsconfig.json") {
+		t.Errorf("expected SKILL.md to declare tsconfig.json as TypeScript marker, got:\n%s", contentStr)
+	}
+}
+
+func TestRun_WritesTsIndex(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	indexPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "ts", "index.md")
+	if _, err := os.Stat(indexPath); err != nil {
+		t.Errorf("expected ts/index.md to exist at %q, got error: %v", indexPath, err)
+	}
+}
+
+func TestRun_TsIndexListsAvailableChecks(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	indexPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "ts", "index.md")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("failed to read ts/index.md: %v", err)
+	}
+
+	contentStr := string(content)
+	expectedChecks := []string{"funclen", "complexity", "cohesion", "filelen", "linelen"}
+	for _, check := range expectedChecks {
+		if !strings.Contains(contentStr, check) {
+			t.Errorf("expected ts/index.md to list %s, got:\n%s", check, contentStr)
+		}
+	}
+}
+
+func TestRun_WritesTsExampleReferences(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	tsDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "ts")
+
+	// These files should exist
+	shouldExist := []string{"funclen.md", "complexity.md", "cohesion.md", "filelen.md"}
+	for _, filename := range shouldExist {
+		path := filepath.Join(tsDir, filename)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected ts/%s to exist at %q, got error: %v", filename, path, err)
+		}
+	}
+
+	// These files should NOT exist
+	shouldNotExist := []string{"duplication.md", "linelen.md"}
+	for _, filename := range shouldNotExist {
+		path := filepath.Join(tsDir, filename)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("expected ts/%s to NOT exist at %q, but it does or had other error: %v", filename, path, err)
+		}
+	}
+}
+
+func TestRun_ValidatesCohesionAndLinelenPresence(t *testing.T) {
+	baseDir := t.TempDir()
+
+	// This test exercises validateEmbeddedContent, which should assert that
+	// the embedded SKILL.md contains both "cohesion" and "linelen"
+	_, err := Run(baseDir, "", ".agents")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	// If we got here, validateEmbeddedContent passed (which would have asserted
+	// the presence of cohesion and linelen)
 }

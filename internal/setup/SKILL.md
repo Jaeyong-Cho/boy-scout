@@ -14,8 +14,9 @@ Before running boy-scout, determine what languages your project contains:
 
 - **Go:** Look for a `go.mod` file in your project root.
 - **C++:** Look for `CMakeLists.txt`, or `.cpp` and `.hpp` files in your project.
+- **TypeScript:** Look for a `tsconfig.json` file in your project root.
 
-If your project matches multiple language markers (e.g., both a `go.mod` and `CMakeLists.txt`), boy-scout will run checks for every matching language and merge all violations into a single ranked list. If your project doesn't match any language marker that boy-scout supports, stop here — no checks can be run.
+If your project matches multiple language markers (e.g., both a `go.mod` and `CMakeLists.txt`, or any of these alongside TypeScript), boy-scout will run checks for every matching language and merge all violations into a single ranked list. If your project doesn't match any language marker that boy-scout supports, stop here — no checks can be run.
 
 ## Per-Language Setup
 
@@ -23,6 +24,7 @@ Once you've identified your language(s), read the appropriate language guide to 
 
 - **Go:** Read `references/lang/go/index.md` for language-specific test command, test-file rules, available checks, and ignore-comment syntax.
 - **C++:** Read `references/lang/cpp/index.md` for available checks and current limitations.
+- **TypeScript:** Read `references/lang/ts/index.md` for available checks and language-specific notes.
 
 ## Running Checks
 
@@ -52,18 +54,20 @@ For mixed-language projects, merge all violations from each language into a sing
 
 ## Selecting Candidates
 
-Review violations in order of disruption (least to most): funclen, same-package duplication, complexity, filelen, cross-package duplication.
+Review violations in order of disruption (least to most): funclen, linelen, same-package duplication, complexity, filelen, cohesion, cross-package duplication.
 
 **Within each type, select one candidate per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), complexity score (complexity), summed DupLines (duplication). Test file violations (`*_test.go`, C++ tests) go last. This produces at most one candidate per type — never select more than one, and never edit anything in this step.
 
-Before showing a candidate, read: language-agnostic reference (`references/{violation-type}.md`) and language-specific example (`references/lang/{go|cpp}/{violation-type}.md`).
+Before showing a candidate, read: language-agnostic reference (`references/{violation-type}.md`) and language-specific example (`references/lang/{go|cpp|ts}/{violation-type}.md`).
 
-| Violation kind | Why/How | Go Example | C++ Example |
-|---|---|---|---|
-| `funclen` (or `gofunclen` in Go) | `references/funclen.md` | `references/lang/go/funclen.md` | `references/lang/cpp/funclen.md` |
-| `complexity` | `references/complexity.md` | `references/lang/go/complexity.md` | (not yet supported for C++) |
-| `filelen` | `references/filelen.md` | `references/lang/go/filelen.md` | `references/lang/cpp/filelen.md` |
-| `duplication` | `references/duplication.md` | `references/lang/go/duplication.md` | (not yet supported for C++) |
+| Violation kind | Why/How | Go Example | C++ Example | TS Example |
+|---|---|---|---|---|
+| `funclen` (or `gofunclen` in Go) | `references/funclen.md` | `references/lang/go/funclen.md` | `references/lang/cpp/funclen.md` | `references/lang/ts/funclen.md` |
+| `linelen` | `references/linelen.md` | (not yet supported) | (not yet supported) | (not yet supported) |
+| `complexity` | `references/complexity.md` | `references/lang/go/complexity.md` | `references/lang/cpp/complexity.md` | `references/lang/ts/complexity.md` |
+| `filelen` | `references/filelen.md` | `references/lang/go/filelen.md` | `references/lang/cpp/filelen.md` | `references/lang/ts/filelen.md` |
+| `cohesion` | `references/cohesion.md` | `references/lang/go/cohesion.md` | `references/lang/cpp/cohesion.md` | `references/lang/ts/cohesion.md` |
+| `duplication` | `references/duplication.md` | `references/lang/go/duplication.md` | (not yet supported for C++) | (not yet supported) |
 
 Each "Why/How" file explains the concept and fix strategy generically. Each language-specific file shows a concrete before/after code example in that language's syntax.
 
