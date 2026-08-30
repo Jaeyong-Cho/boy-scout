@@ -7,6 +7,7 @@ import (
 	"boy-scout/internal/assertutil"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/linelen"
+	"boy-scout/internal/tscohesion"
 	"boy-scout/internal/tscomplexity"
 	"boy-scout/internal/tsfunclen"
 )
@@ -99,6 +100,27 @@ var tsComplexityCfg = CheckerConfig{
 	},
 }
 
+var tsCohesionCfg = CheckerConfig{
+	Name: "cohesion",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+				opts := tscohesion.Options{
+					ExcludeFiles: excludeFiles,
+					Debug:        debug,
+				}
+				return tscohesion.Check(paths, opts)
+			}
+		}
+	},
+	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderTsCohesionJSON(report.(tscohesion.Report), stdout, stderr)
+	},
+	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
+		return renderTsCohesionText(report.(tscohesion.Report), stdout, stderr)
+	},
+}
+
 // Thin wrappers that dispatch to configs.
 func runTsFunclen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsFunclenCfg, args, stdout, stderr)
@@ -114,6 +136,10 @@ func runTsLinelen(args []string, stdout, stderr io.Writer) int {
 
 func runTsComplexity(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsComplexityCfg, args, stdout, stderr)
+}
+
+func runTsCohesion(args []string, stdout, stderr io.Writer) int {
+	return runCheck(tsCohesionCfg, args, stdout, stderr)
 }
 
 // runTsAll runs all TypeScript checks and combines their reports.
