@@ -450,6 +450,45 @@ func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 	if exitCode != 1 {
 		t.Errorf("expected exit code 1, got %d (stderr: %s)", exitCode, stderr)
 	}
+
+	// Ensure legacy checks are not present in output
+	legacyPrefixes := []string{"[crap]", "[instability]", "[abstractness]"}
+	for _, prefix := range legacyPrefixes {
+		if strings.Contains(output, prefix) {
+			t.Errorf("unexpected legacy check prefix %q found in output", prefix)
+		}
+	}
+}
+
+func TestRun_AllOutputHasNoLegacyCheckKeys(t *testing.T) {
+	// Create a minimal clean fixture with no violations
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(tmpDir+"/main.go", []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	oldCwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldCwd)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
+
+	var report map[string]json.RawMessage
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s\nstderr: %s", err, stdoutBuf.String(), stderrBuf.String())
+	}
+
+	// Assert no legacy check keys exist
+	legacyKeys := []string{"crap", "instability", "abstractness"}
+	for _, key := range legacyKeys {
+		if _, ok := report[key]; ok {
+			t.Errorf("unexpected legacy key %q found in JSON output", key)
+		}
+	}
 }
 
 

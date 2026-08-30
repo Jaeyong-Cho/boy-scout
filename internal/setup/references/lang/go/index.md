@@ -21,11 +21,8 @@ Go test files use the `_test.go` suffix. For example: `main_test.go`, `handlers_
 Boy-scout for Go supports the following violation kinds:
 
 1. **funclen** (or `gofunclen`) — Function length violations
-2. **crap** — CRAP (Change Risk Analysis and Prediction) score violations
-3. **filelen** — File length violations
-4. **duplication** — Duplicate code pattern violations
-5. **instability** — Package dependency instability violations
-6. **abstractness** — Package abstraction level violations
+2. **filelen** — File length violations
+3. **duplication** — Duplicate code pattern violations
 
 ## Ignore Comments
 
@@ -45,8 +42,4 @@ func CalculateTax(base float64) float64 { // boy-scout:ignore:duplication
 }
 ```
 
-This excludes the function from duplication comparison but allows other violations (funclen, crap, etc.) to still be checked and reported.
-
-## Note on Test Files
-
-CRAP violations never appear for `_test.go` files by default (no flag needed) — the coverage formula is meaningless for test code by construction, since `go test -coverprofile` never instruments test files. Violations in test files are deferred to the end of the violation list, after every non-test violation.
+This excludes the function from duplication comparison but allows other violations (funclen, complexity, etc.) to still be checked and reported.

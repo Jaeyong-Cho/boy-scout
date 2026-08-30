@@ -48,9 +48,9 @@ For mixed-language projects, merge all violations from each language into a sing
 
 ## Selecting Candidates
 
-Review violations in order of disruption (least to most): funclen, same-package duplication, complexity, filelen, instability, abstractness, cross-package duplication.
+Review violations in order of disruption (least to most): funclen, same-package duplication, complexity, filelen, cross-package duplication.
 
-**Within each type, select one candidate per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), complexity score (complexity), summed DupLines (duplication), Gap (instability), Distance (abstractness). Test file violations (`*_test.go`, C++ tests) go last. This produces at most one candidate per type — never select more than one, and never edit anything in this step.
+**Within each type, select one candidate per run.** Identify the worst by boy-scout's severity: lines-over-limit (funclen/filelen), complexity score (complexity), summed DupLines (duplication). Test file violations (`*_test.go`, C++ tests) go last. This produces at most one candidate per type — never select more than one, and never edit anything in this step.
 
 Before showing a candidate, read: language-agnostic reference (`references/{violation-type}.md`) and language-specific example (`references/lang/{go|cpp}/{violation-type}.md`).
 
@@ -60,8 +60,6 @@ Before showing a candidate, read: language-agnostic reference (`references/{viol
 | `complexity` | `references/complexity.md` | `references/lang/go/complexity.md` | (not yet supported for C++) |
 | `filelen` | `references/filelen.md` | `references/lang/go/filelen.md` | `references/lang/cpp/filelen.md` |
 | `duplication` | `references/duplication.md` | `references/lang/go/duplication.md` | (not yet supported for C++) |
-| `instability` | `references/instability.md` | `references/lang/go/instability.md` | `references/lang/cpp/instability.md` |
-| `abstractness` | `references/abstractness.md` | `references/lang/go/abstractness.md` | `references/lang/cpp/abstractness.md` |
 
 Each "Why/How" file explains the concept and fix strategy generically. Each language-specific file shows a concrete before/after code example in that language's syntax.
 
@@ -74,7 +72,7 @@ Each "Why/How" file explains the concept and fix strategy generically. Each lang
 For each selected candidate, show:
 
 1. The file:line and the severity number boy-scout printed.
-2. The flagged code — read the actual function/file boy-scout pointed at and quote it (the whole function for funclen/complexity, the relevant snippet for filelen/duplication/instability/abstractness).
+2. The flagged code — read the actual function/file boy-scout pointed at and quote it (the whole function for funclen/complexity, the relevant snippet for filelen/duplication).
 3. A one-paragraph *why*, using the matching reference file's "Why this is a problem" section, filled in with this candidate's real numbers (e.g. "complexity=12, limit=10" for a complexity violation) — not a generic copy-paste.
 4. A one-line *fix strategy* pointer, quoting the first sentence of the matching reference file's "How to fix it" section.
 

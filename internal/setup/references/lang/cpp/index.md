@@ -16,8 +16,6 @@ Boy-scout for C++ currently supports:
 
 1. **funclen** — Function length violations
 2. **filelen** — File length violations
-3. **instability** — File dependency instability violations (stable files including unstable ones)
-4. **abstractness** — File abstraction-level violations (Zone of Pain / Zone of Uselessness)
 
 ## Limitations
 

@@ -238,7 +238,7 @@ func TestRun_TemplateDeclaresFilelenGuidance(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"FilelenFixedLast", "filelen, instability, abstractness, cross-package duplication"},
+		{"FilelenFixedLast", "filelen, cross-package duplication"},
 	}
 
 	for _, c := range cases {
@@ -259,7 +259,7 @@ func TestRun_WritesAllReferenceFiles(t *testing.T) {
 	}
 
 	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
-	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md", "instability.md", "abstractness.md"}
+	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md"}
 
 	for _, filename := range referenceFiles {
 		path := filepath.Join(refDir, filename)
@@ -288,8 +288,6 @@ func TestRun_ReferenceFilesExplainWhyAndHow(t *testing.T) {
 		{"Funclen", "funclen.md", "one level of abstraction", "table of contents"},
 		{"Complexity", "complexity.md", "too many independent paths", "each branch"},
 		{"Filelen", "filelen.md", "mixing multiple concerns", "high cohesion"},
-		{"Instability", "instability.md", "least-stable thing it leans on", "Point the dependency the other way"},
-		{"Abstractness", "abstractness.md", "Zone of Pain", "deep module"},
 	}
 
 	for _, c := range cases {
@@ -319,7 +317,7 @@ func TestRun_ReferenceFilesHaveNoMachineLocalPath(t *testing.T) {
 	}
 
 	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
-	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md", "instability.md", "abstractness.md"}
+	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md"}
 
 	for _, filename := range referenceFiles {
 		content, err := os.ReadFile(filepath.Join(refDir, filename))
@@ -356,8 +354,6 @@ func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
 		"references/funclen.md",
 		"references/complexity.md",
 		"references/filelen.md",
-		"references/instability.md",
-		"references/abstractness.md",
 	}
 
 	for _, refFile := range referenceFiles {
@@ -367,7 +363,7 @@ func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
 	}
 
 	// Check fix-order statement
-	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, instability, abstractness, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, cross-package duplication") {
 		t.Errorf("expected skill template to contain fix-order statement with all violation kinds, got:\n%s", contentStr)
 	}
 }
@@ -390,7 +386,6 @@ func TestRun_TemplateNoLongerInlinesViolationExplanations(t *testing.T) {
 	// (they should only appear in reference files)
 	forbiddenMarkers := []string{
 		"**gofunclen violation:**",
-		"**crap violation:**",
 		"**filelen violation:**",
 	}
 
@@ -443,7 +438,7 @@ func TestRun_WritesCppFilelenInstabilityAbstractnessReferences(t *testing.T) {
 	}
 
 	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp")
-	files := []string{"filelen.md", "instability.md", "abstractness.md"}
+	files := []string{"filelen.md"}
 
 	for _, filename := range files {
 		path := filepath.Join(refDir, filename)
@@ -470,8 +465,6 @@ func TestRun_TemplateNoLongerMarksCppFilelenInstabilityAbstractnessUnsupported(t
 
 	for _, path := range []string{
 		"references/lang/cpp/filelen.md",
-		"references/lang/cpp/instability.md",
-		"references/lang/cpp/abstractness.md",
 	} {
 		if !strings.Contains(skillStr, path) {
 			t.Errorf("expected SKILL.md to reference %q, got:\n%s", path, skillStr)
@@ -494,7 +487,7 @@ func TestRun_CppIndexListsFilelenInstabilityAbstractness(t *testing.T) {
 	}
 	indexStr := string(content)
 
-	for _, marker := range []string{"filelen", "instability", "abstractness"} {
+	for _, marker := range []string{"filelen"} {
 		if !strings.Contains(indexStr, marker) {
 			t.Errorf("expected cpp index.md to mention %q, got:\n%s", marker, indexStr)
 		}
@@ -512,9 +505,7 @@ func TestRun_TopLevelReferencesPointToCppExamples(t *testing.T) {
 	refDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references")
 
 	cases := map[string]string{
-		"filelen.md":      "references/lang/cpp/filelen.md",
-		"instability.md":  "references/lang/cpp/instability.md",
-		"abstractness.md": "references/lang/cpp/abstractness.md",
+		"filelen.md": "references/lang/cpp/filelen.md",
 	}
 
 	for filename, wantPath := range cases {
@@ -543,7 +534,7 @@ func TestRun_TemplateOrdersDuplicationBySamePackageVsCrossPackage(t *testing.T) 
 	contentStr := string(content)
 
 	// Check that same-package duplication clusters are mentioned in early tier with funclen
-	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, instability, abstractness, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, same-package duplication, complexity, filelen, cross-package duplication") {
 		t.Errorf("expected skill template to mention violation fix order with same-package before cross-package duplication, got:\n%s", contentStr)
 	}
 }
