@@ -152,116 +152,6 @@ func TestRun_SetupWriteFailureExitsTwo(t *testing.T) {
 	}
 }
 
-func TestRun_AllRespectsPerCheckerIgnoreComment(t *testing.T) {
-	// Create a fixture with a function long enough for gofunclen (105 lines)
-	// and complex enough for crap (5 nested ifs = complexity 5, with no coverage = score = 5^2*(1-0)^3 + 5 = 30, way above 6.0 threshold)
-	src := "package main\n\n// boy-scout:ignore:crap\nfunc ViolatingFunc() {\n"
-	for i := 0; i < 100; i++ {
-		src += fmt.Sprintf("\t_ = %d\n", i)
-	}
-	src += "\tif true {\n\t\tif true {\n\t\t\tif true {\n\t\t\t\tif true {\n\t\t\t\t\tif true {\n\t\t\t\t\t\t_ = \"x\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"
-
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "main.go", src)
-	initModule(t, tmpDir)
-
-	report, exitCode := runAllJSON(t)
-
-	// funclen should report ViolatingFunc (directive doesn't name gofunclen)
-	if !hasViolation(report.Gofunclen.Violations, "ViolatingFunc") {
-		t.Errorf("expected ViolatingFunc in funclen violations, got %v", report.Gofunclen.Violations)
-	}
-
-	// crap should NOT report ViolatingFunc (directive names crap, so it's excluded)
-	if hasViolation(report.Crap.Violations, "ViolatingFunc") {
-		t.Errorf("expected ViolatingFunc NOT in crap violations, but found it")
-	}
-
-	// Exit code should be 1 (violation from gofunclen)
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRun_CrapIgnoresTestFilesByDefaultOnCLI(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Write main.go with a trivial function
-	writeGoFile(t, tmpDir, "main.go", `package main
-func Add(a, b int) int {
-	return a + b
-}
-`)
-
-	// Write main_test.go with an untested, deeply-nested helper function
-	writeGoFile(t, tmpDir, "main_test.go", `package main
-import "testing"
-func TestAdd(t *testing.T) {
-	_ = Add(1, 2)
-}
-func chdirTemp() {
-	if true { if true { if true { if true { if true { } } } } }
-}
-`)
-
-	// Write go.mod
-	writeGoFile(t, tmpDir, "go.mod", "module test\n\ngo 1.24\n")
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	// Run crap with low threshold, no --exclude-file flag
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=1", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-
-	// Assert that chdirTemp from main_test.go is NOT in the output
-	if strings.Contains(output, "chdirTemp") {
-		t.Errorf("expected chdirTemp not to be reported, but found it in output:\n%s", output)
-	}
-
-	// Exit code should be 0 (no violations, since the only complex function is in excluded test file)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 (clean), got %d", exitCode)
-	}
-}
-
-func TestRun_AllCrapSectionIgnoresTestFilesByDefault(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	writeGoFile(t, tmpDir, "main.go", `package main
-func Add(a, b int) int {
-	return a + b
-}
-`)
-
-	// main_test.go has an untested, deeply-nested helper function
-	writeGoFile(t, tmpDir, "main_test.go", `package main
-import "testing"
-func TestAdd(t *testing.T) {
-	_ = Add(1, 2)
-}
-func chdirTemp() {
-	if true { if true { if true { if true { if true { } } } } }
-}
-`)
-
-	initModule(t, tmpDir)
-
-	// Run "all" with JSON format (uses default thresholds: gofunclen=50, crap=6.0)
-	report, exitCode := runAllJSON(t)
-
-	if hasViolation(report.Crap.Violations, "chdirTemp") {
-		t.Errorf("expected chdirTemp not to be reported in crap section, but found it")
-	}
-
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 (clean), got %d", exitCode)
-	}
-}
-
 func TestRun_CppFunclenReportsViolation(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -876,7 +766,7 @@ func TestRun_AllIncludesFilelen(t *testing.T) {
 
 	output := stdoutBuf.String()
 
-	// Should include [filelen] output alongside [gofunclen] and [crap]
+	// Should include [filelen] output alongside [gofunclen]
 	if !strings.Contains(output, "[filelen]") {
 		t.Errorf("expected output to contain '[filelen]', got:\n%s", output)
 	}
@@ -995,9 +885,9 @@ func TestRun_SetupWritesReferenceFiles(t *testing.T) {
 		t.Errorf("expected exit code 0, got %d (stderr: %s)", exitCode, stderrBuf.String())
 	}
 
-	// Verify all 5 reference files exist
+	// Verify reference files exist
 	refDir := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references")
-	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md", "instability.md", "abstractness.md"}
+	referenceFiles := []string{"funclen.md", "complexity.md", "filelen.md"}
 
 	for _, filename := range referenceFiles {
 		path := filepath.Join(refDir, filename)
@@ -1014,16 +904,6 @@ func TestRun_SetupWritesReferenceFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(funclenContent), "one level of abstraction") {
 		t.Errorf("expected funclen.md to contain 'one level of abstraction', got:\n%s", funclenContent)
-	}
-
-	// Verify abstractness.md contains expected marker
-	abstractnessPath := filepath.Join(refDir, "abstractness.md")
-	abstractnessContent, err := os.ReadFile(abstractnessPath)
-	if err != nil {
-		t.Fatalf("failed to read abstractness.md: %v", err)
-	}
-	if !strings.Contains(string(abstractnessContent), "Zone of Pain") {
-		t.Errorf("expected abstractness.md to contain 'Zone of Pain', got:\n%s", abstractnessContent)
 	}
 }
 
@@ -1097,7 +977,7 @@ func TestRun_SetupWritesCppFilelenInstabilityAbstractnessReferences(t *testing.T
 	}
 
 	refDir := filepath.Join(tmpDir, ".agents", "skills", "boy-scout", "references", "lang", "cpp")
-	for _, filename := range []string{"filelen.md", "instability.md", "abstractness.md"} {
+	for _, filename := range []string{"filelen.md"} {
 		path := filepath.Join(refDir, filename)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("expected %q to exist, got error: %v", filename, err)

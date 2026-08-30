@@ -64,9 +64,6 @@ type allReport struct {
 	Gofunclen struct {
 		Violations []funcViolation `json:"violations"`
 	} `json:"gofunclen"`
-	Crap struct {
-		Violations []funcViolation `json:"violations"`
-	} `json:"crap"`
 }
 
 // runAllJSON runs "go all --format=json ." against the current directory and parses the report.
@@ -203,63 +200,6 @@ func TestRun_GofunclenDefaultsToCurrentDir(t *testing.T) {
 
 	if exitCode != 1 {
 		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRun_AbstractnessDefaultPathDoesNotPanic(t *testing.T) {
-	// Create a temp module with pkg/a and pkg/b to test that "go abstractness"
-	// with no path argument (defaults to ".") does not panic when BuildGraph
-	// must resolve relative paths correctly.
-	tmpDir := t.TempDir()
-	initModule(t, tmpDir)
-
-	// Create pkg/a: zero exported types (will be Zone-of-Pain candidate)
-	aPkgDir := filepath.Join(tmpDir, "pkg", "a")
-	os.MkdirAll(aPkgDir, 0755)
-	aCode := `package a
-
-import "test/pkg/b"
-
-func UseB() { b.B() }
-`
-	writeGoFile(t, aPkgDir, "a.go", aCode)
-
-	// Create pkg/b
-	bPkgDir := filepath.Join(tmpDir, "pkg", "b")
-	os.MkdirAll(bPkgDir, 0755)
-	bCode := `package b
-
-func B() {}
-`
-	writeGoFile(t, bPkgDir, "b.go", bCode)
-
-	// Create pkg/c to import pkg/a (make it a Pain candidate with Ca=1)
-	cPkgDir := filepath.Join(tmpDir, "pkg", "c")
-	os.MkdirAll(cPkgDir, 0755)
-	cCode := `package c
-
-import "test/pkg/a"
-
-func C() { a.UseB() }
-`
-	writeGoFile(t, cPkgDir, "c.go", cCode)
-
-	// Guard against panics
-	var panicValue interface{}
-	var stdoutBuf, stderrBuf bytes.Buffer
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				panicValue = r
-			}
-		}()
-
-		// Note: we pass no path argument, so it defaults to "."
-		run([]string{"go", "abstractness"}, &stdoutBuf, &stderrBuf)
-	}()
-
-	if panicValue != nil {
-		t.Fatalf("expected no panic, but recovered: %v", panicValue)
 	}
 }
 
@@ -446,6 +386,34 @@ func TestRun_UnknownSubcommandForLangPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestRun_UnknownSubcommand_CrapInstabilityAbstractness(t *testing.T) {
+	tests := []struct {
+		args []string
+		lang string
+		cmd  string
+	}{
+		{[]string{"go", "crap", "."}, "go", "crap"},
+		{[]string{"cpp", "instability", "."}, "cpp", "instability"},
+		{[]string{"cpp", "abstractness", "."}, "cpp", "abstractness"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.lang+"_"+tt.cmd, func(t *testing.T) {
+			var stdoutBuf, stderrBuf bytes.Buffer
+			exitCode := run(tt.args, &stdoutBuf, &stderrBuf)
+
+			stderr := stderrBuf.String()
+			if !strings.Contains(stderr, "unknown subcommand") {
+				t.Errorf("expected 'unknown subcommand' in stderr, got:\n%s", stderr)
+			}
+
+			if exitCode != 2 {
+				t.Errorf("expected exit code 2, got %d", exitCode)
+			}
+		})
+	}
+}
+
 func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 	// Create a temp dir with a violating file
 	tmpDir := t.TempDir()
@@ -482,27 +450,22 @@ func TestRun_AllRunsEveryRegisteredCheck(t *testing.T) {
 	if exitCode != 1 {
 		t.Errorf("expected exit code 1, got %d (stderr: %s)", exitCode, stderr)
 	}
+
+	// Ensure legacy checks are not present in output
+	legacyPrefixes := []string{"[crap]", "[instability]", "[abstractness]"}
+	for _, prefix := range legacyPrefixes {
+		if strings.Contains(output, prefix) {
+			t.Errorf("unexpected legacy check prefix %q found in output", prefix)
+		}
+	}
 }
 
-func TestRun_CrapRespectsThresholdFlag(t *testing.T) {
-	// Create a file with a complex untested function
-	src := `package main
-func ComplexFunc(x int) string {
-	if x > 10 {
-		if x > 20 {
-			return "big"
-		}
-		return "medium"
-	}
-	return "small"
-}
-`
+func TestRun_AllOutputHasNoLegacyCheckKeys(t *testing.T) {
+	// Create a minimal clean fixture with no violations
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
+	if err := os.WriteFile(tmpDir+"/main.go", []byte("package main\n"), 0644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
-
-	// Initialize go module
 	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
@@ -512,249 +475,22 @@ func ComplexFunc(x int) string {
 	defer os.Chdir(oldCwd)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=2", "."}, &stdoutBuf, &stderrBuf)
+	run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
 
-	output := stdoutBuf.String()
-	// Should show threshold=2.00 in output
-	if !strings.Contains(output, "threshold=2.00") {
-		t.Errorf("expected 'threshold=2.00' in output, got:\n%s", output)
+	var report map[string]json.RawMessage
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s\nstderr: %s", err, stdoutBuf.String(), stderrBuf.String())
 	}
 
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1 (violations), got %d", exitCode)
-	}
-}
-
-func TestRun_CrapTextFormatMatchesExpectedLine(t *testing.T) {
-	// Create a file with a complex untested function
-	src := `package main
-func ComplexFunc(x int) string {
-	if x > 10 {
-		if x > 20 {
-			return "big"
-		}
-		return "medium"
-	}
-	return "small"
-}
-`
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Initialize go module
-	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=1", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-	// Expected format: "file:line: function Name has CRAP score X.XX (complexity=C, coverage=P.P%, threshold=T.TT)"
-	if !strings.Contains(output, "function ComplexFunc has CRAP score") {
-		t.Errorf("expected 'function ComplexFunc has CRAP score' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "complexity=") {
-		t.Errorf("expected 'complexity=' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "coverage=") {
-		t.Errorf("expected 'coverage=' in output, got:\n%s", output)
-	}
-
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-// crapJSONResult mirrors the JSON schema produced by the crap subcommand's --format=json output.
-type crapJSONResult struct {
-	Violations []struct {
-		File       string  `json:"file"`
-		Line       int     `json:"line"`
-		Func       string  `json:"func"`
-		Complexity int     `json:"complexity"`
-		Coverage   float64 `json:"coverage"`
-		Score      float64 `json:"score"`
-		Threshold  float64 `json:"threshold"`
-	}
-	Skipped []struct {
-		File  string `json:"file"`
-		Error string `json:"error"`
-	}
-}
-
-func TestRun_CrapJSONFormatOutputsValidSchema(t *testing.T) {
-	// Create a file with a complex untested function
-	src := `package main
-func ComplexFunc(x int) string {
-	if x > 10 {
-		if x > 20 {
-			return "big"
-		}
-		return "medium"
-	}
-	return "small"
-}
-`
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "main.go", src)
-	initModule(t, tmpDir)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "crap", "--threshold=1", "--format=json", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-
-	var result crapJSONResult
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
-		return
-	}
-
-	if len(result.Violations) == 0 {
-		t.Fatalf("expected at least 1 violation, got %d", len(result.Violations))
-	}
-
-	v := result.Violations[0]
-	if v.Func != "ComplexFunc" {
-		t.Errorf("expected func 'ComplexFunc', got '%s'", v.Func)
-	}
-	if v.Complexity <= 0 {
-		t.Errorf("expected positive complexity, got %d", v.Complexity)
-	}
-
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRun_CrapDefaultThresholdIs30(t *testing.T) {
-	// Create a borderline function: complexity 8, coverage ~70% => CRAP ≈ 9.7
-	// This should NOT violate with the new default (30.0)
-	// but WOULD violate with the old default (6.0)
-	src := `package main
-func BorderlineFunc(x int) string {
-	if x == 1 { return "a" }
-	if x == 2 { return "b" }
-	if x == 3 { return "c" }
-	if x == 4 { return "d" }
-	if x == 5 { return "e" }
-	if x == 6 { return "f" }
-	if x == 7 { return "g" }
-	if x == 8 { return "h" }
-	return "default"
-}
-`
-	testSrc := `package main
-import "testing"
-
-func TestBorderlineFunc(t *testing.T) {
-	cases := []struct {
-		x int
-		want string
-	}{
-		{1, "a"},
-		{2, "b"},
-		{3, "c"},
-		{4, "d"},
-		{5, "e"},
-		{6, "f"},
-		{7, "g"},
-	}
-	for _, tt := range cases {
-		got := BorderlineFunc(tt.x)
-		if got != tt.want {
-			t.Errorf("BorderlineFunc(%d) = %q, want %q", tt.x, got, tt.want)
+	// Assert no legacy check keys exist
+	legacyKeys := []string{"crap", "instability", "abstractness"}
+	for _, key := range legacyKeys {
+		if _, ok := report[key]; ok {
+			t.Errorf("unexpected legacy key %q found in JSON output", key)
 		}
 	}
 }
-`
 
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "main.go", src)
-	writeGoFile(t, tmpDir, "main_test.go", testSrc)
-	initModule(t, tmpDir)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	// Run with no --threshold flag; should use the new default (30.0)
-	exitCode := run([]string{"go", "crap", "--format=json", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-
-	var result crapJSONResult
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, output)
-		return
-	}
-
-	// With new default (30.0), BorderlineFunc (CRAP ≈ 9.7) should NOT violate
-	for _, v := range result.Violations {
-		if v.Func == "BorderlineFunc" {
-			t.Errorf("BorderlineFunc should not violate at the new default threshold 30.0 (CRAP ≈ 9.7), but got violation with score %f", v.Score)
-		}
-	}
-
-	// Exit code should be 0 (no violations)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 (no violations with new default), got %d (output: %s)", exitCode, output)
-	}
-}
-
-func TestRun_AllCombinesGofunclenAndCrap(t *testing.T) {
-	// Create a file with both gofunclen and crap violations
-	src := `package main
-func ViolatingFunc() {
-`
-	// Add 105 lines to violate gofunclen
-	for i := 0; i < 103; i++ {
-		src += fmt.Sprintf("\t_ = %d\n", i)
-	}
-	src += `	if true {
-		if true {
-			if true {
-				_ = "a"
-			}
-		}
-	}
-}
-`
-
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/main.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Initialize go module
-	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module test\n\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "all", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-	// Should have both gofunclen and crap violations
-	if !strings.Contains(output, "[gofunclen]") {
-		t.Errorf("expected '[gofunclen]' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "[crap]") {
-		t.Errorf("expected '[crap]' in output, got:\n%s", output)
-	}
-
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", exitCode)
-	}
-}
 
 const complexFuncSrc = `package main
 func ComplexFunc() {
@@ -777,16 +513,12 @@ func CleanFunc() {
 }
 `
 
-// writeAllCheckFixtures writes source files into dir that produce the requested
-// combination of gofunclen/crap violations for the "all" subcommand.
-func writeAllCheckFixtures(t *testing.T, dir string, gofunclenViolating, crapViolating bool) {
+// writeAllCheckFixtures writes source files into dir that produce the requested violations for the "all" subcommand.
+func writeAllCheckFixtures(t *testing.T, dir string, gofunclenViolating bool) {
 	if gofunclenViolating {
 		writeGoFile(t, dir, "long.go", longFuncSrc("main", "LongFunc", 105))
 	}
-	if crapViolating {
-		writeGoFile(t, dir, "complex.go", complexFuncSrc)
-	}
-	if !gofunclenViolating && !crapViolating {
+	if !gofunclenViolating {
 		writeGoFile(t, dir, "clean.go", cleanFuncSrc)
 	}
 }
@@ -795,19 +527,16 @@ func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
 	testCases := []struct {
 		name             string
 		gofunclenViolating bool
-		crapViolating    bool
 		expectedExitCode int
 	}{
-		{"both clean", false, false, 0},
-		{"only gofunclen violated", true, false, 1},
-		{"only crap violated", false, true, 1},
-		{"both violated", true, true, 1},
+		{"clean", false, 0},
+		{"gofunclen violated", true, 1},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			writeAllCheckFixtures(t, tmpDir, tc.gofunclenViolating, tc.crapViolating)
+			writeAllCheckFixtures(t, tmpDir, tc.gofunclenViolating)
 			initModule(t, tmpDir)
 
 			var stdoutBuf, stderrBuf bytes.Buffer
@@ -967,182 +696,6 @@ func TestRun_ExcludedViolationsDoNotAffectExitCode(t *testing.T) {
 	}
 }
 
-func TestRun_InstabilityCommandIsRegistered(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Write a minimal go.mod
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Write a minimal Go file
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "instability", tmpDir}, &stdoutBuf, &stderrBuf)
-
-	// Should not error (exit code 0 or 1 is fine, 2 means error)
-	if exitCode == 2 {
-		t.Errorf("expected instability command to work, got exit code 2\nstderr: %s", stderrBuf.String())
-	}
-
-	// Output should contain instability metrics
-	output := stdoutBuf.String()
-	if !strings.Contains(output, "total edges") && !strings.Contains(output, "violation rate") {
-		t.Errorf("expected instability output to contain metrics, got:\n%s", output)
-	}
-}
-
-func TestRun_InstabilityJSONFormat(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Write a minimal go.mod
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Write a minimal Go file
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "instability", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
-
-	if exitCode == 2 {
-		t.Errorf("expected instability JSON command to work, got exit code 2\nstderr: %s", stderrBuf.String())
-	}
-
-	// Parse JSON output
-	var report struct {
-		Violations           []interface{}
-		TotalEdges           int
-		ViolationRate        float64
-		WeightedViolationRate float64
-	}
-	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
-	}
-}
-
-func TestRun_AllIncludesInstability(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Write a minimal go.mod
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.24\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	// Write a minimal Go file
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	oldCwd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldCwd)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
-
-	if exitCode == 2 {
-		t.Errorf("expected 'go all' command to work, got exit code 2\nstderr: %s", stderrBuf.String())
-	}
-
-	// Parse JSON output and check for instability field
-	var report struct {
-		Instability struct {
-			TotalEdges int
-		}
-	}
-	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
-		t.Errorf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
-	}
-
-	// Check that instability field exists
-	if report.Instability.TotalEdges < 0 {
-		t.Error("expected instability field in combined report")
-	}
-}
-
-// TestRun_InstabilityIgnoresTestOnlyImports is a full-CLI-pipeline regression test
-// (run() -> flag parsing -> instability.BuildGraph -> JSON encode) for the
-// AST-based dependency graph fix.
-// Given: order.go imports payment (real), order_test.go imports mocks (test-only)
-// When: `boy-scout go instability --format=json` runs on the module
-// Then: TotalEdges must be 1 (order->payment only); mocks must never appear as a target
-// NOTE: expected to FAIL until instability.BuildGraph excludes _test.go files.
-func TestRun_InstabilityIgnoresTestOnlyImports(t *testing.T) {
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "go.mod", "module fixture\n\ngo 1.24\n")
-
-	paymentDir := filepath.Join(tmpDir, "pkg", "payment")
-	orderDir := filepath.Join(tmpDir, "pkg", "order")
-	mocksDir := filepath.Join(tmpDir, "pkg", "mocks")
-	for _, d := range []string{paymentDir, orderDir, mocksDir} {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			t.Fatalf("MkdirAll(%s) failed: %v", d, err)
-		}
-	}
-
-	writeGoFile(t, paymentDir, "payment.go", `package payment
-
-type Service struct{}
-
-func (s Service) Pay(amount int) bool { return amount > 0 }
-`)
-	writeGoFile(t, mocksDir, "mocks.go", `package mocks
-
-type FakePayment struct{}
-
-func New() FakePayment { return FakePayment{} }
-`)
-	writeGoFile(t, orderDir, "order.go", `package order
-
-import "fixture/pkg/payment"
-
-type Order struct {
-	p payment.Service
-}
-
-func (o Order) Checkout(amount int) bool { return o.p.Pay(amount) }
-`)
-	writeGoFile(t, orderDir, "order_test.go", `package order
-
-import (
-	"testing"
-
-	"fixture/pkg/mocks"
-)
-
-func TestCheckout(t *testing.T) {
-	_ = mocks.New()
-}
-`)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "instability", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
-	if exitCode == 2 {
-		t.Fatalf("expected instability command to run, got exit code 2\nstderr: %s", stderrBuf.String())
-	}
-
-	var report struct {
-		TotalEdges int
-	}
-	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
-		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
-	}
-
-	if report.TotalEdges != 1 {
-		t.Errorf("expected TotalEdges=1 (order->payment only, order_test.go's mocks import excluded), got %d", report.TotalEdges)
-	}
-	if strings.Contains(stdoutBuf.String(), "mocks") {
-		t.Errorf("expected no reference to test-only dependency 'mocks' in output, got:\n%s", stdoutBuf.String())
-	}
-}
-
 // TestRun_AbstractnessIgnoresTestFuncsAsExported is a full-CLI-pipeline regression
 // test for the same fix, on the abstractness side: TestXxx functions in _test.go
 // files must not count toward SurfaceRatio's "exported declarations" count.
@@ -1153,176 +706,6 @@ func TestCheckout(t *testing.T) {
 // Then: deepcache must NOT be reported as a violation (it's a deep module; the
 // 25 TestBehaviorN funcs must not inflate SurfaceRatio past the 0.5 gate)
 // NOTE: expected to FAIL until abstractness's underlying graph excludes _test.go files.
-func TestRun_AbstractnessIgnoresTestFuncsAsExported(t *testing.T) {
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "go.mod", "module example.com/cache\n\ngo 1.24\n")
-	setupCLIDeepCachePackage(t, tmpDir)
-	setupCLICallerPackages(t, tmpDir, 8)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	run([]string{"go", "abstractness", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
-
-	verifyCLIDeepCacheNotFlagged(t, stdoutBuf)
-}
-
-func setupCLIDeepCachePackage(t *testing.T, tmpDir string) {
-	deepcacheDir := filepath.Join(tmpDir, "deepcache")
-	if err := os.MkdirAll(deepcacheDir, 0755); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	writeCLIDeepCacheCode(t, deepcacheDir)
-	writeCLIDeepCacheTests(t, deepcacheDir)
-}
-
-func writeCLIDeepCacheCode(t *testing.T, deepcacheDir string) {
-	writeGoFile(t, deepcacheDir, "deepcache.go", `package deepcache
-
-type Cache struct {
-	data map[string]interface{}
-	lock interface{}
-}
-
-type Config struct {
-	MaxSize int
-}
-
-type Stats struct {
-	Hits   int
-	Misses int
-}
-
-func (c *Cache) get(key string) interface{}        { return nil }
-func (c *Cache) set(key string, val interface{})   {}
-func (c *Cache) evict(key string)                  {}
-func (c *Cache) findLRU() string                   { return "" }
-func (c *Cache) updateLRU(key string)              {}
-func (c *Cache) marshal(v interface{}) []byte      { return nil }
-func (c *Cache) unmarshal(data []byte) interface{} { return nil }
-func (c *Cache) compress(data []byte) []byte       { return nil }
-func (c *Cache) decompress(data []byte) []byte     { return nil }
-
-type lruNode struct{ key string }
-type hashBucket struct{ items []lruNode }
-type serializer interface{}
-type compressor interface{}
-
-func newLRUNode(key string) *lruNode  { return nil }
-func newHashBucket() *hashBucket      { return nil }
-func newSerializer() serializer       { return nil }
-func newCompressor() compressor       { return nil }
-func hashKey(key string) uint64       { return 0 }
-func validateKey(key string) error    { return nil }
-func validateSize(sz int) error       { return nil }
-func computeHash(data []byte) uint64  { return 0 }
-func encodeStats(s *Stats) []byte     { return nil }
-func decodeStats(data []byte) *Stats  { return nil }
-func diffStats(s1, s2 *Stats) *Stats  { return nil }
-func mergeStats(s1, s2 *Stats) *Stats { return nil }
-`)
-}
-
-func writeCLIDeepCacheTests(t *testing.T, deepcacheDir string) {
-	var testFuncs strings.Builder
-	testFuncs.WriteString("package deepcache\n\nimport \"testing\"\n\n")
-	for i := 1; i <= 25; i++ {
-		fmt.Fprintf(&testFuncs, "func TestBehavior%d(t *testing.T) {}\n", i)
-	}
-	writeGoFile(t, deepcacheDir, "deepcache_test.go", testFuncs.String())
-}
-
-func setupCLICallerPackages(t *testing.T, tmpDir string, count int) {
-	for i := 1; i <= count; i++ {
-		callerDir := filepath.Join(tmpDir, fmt.Sprintf("caller%d", i))
-		if err := os.MkdirAll(callerDir, 0755); err != nil {
-			t.Fatalf("MkdirAll failed: %v", err)
-		}
-		writeGoFile(t, callerDir, fmt.Sprintf("caller%d.go", i), fmt.Sprintf(`package caller%d
-
-import "example.com/cache/deepcache"
-
-func Call%d(cfg deepcache.Config) {
-	_ = cfg
-}
-`, i, i))
-	}
-}
-
-func verifyCLIDeepCacheNotFlagged(t *testing.T, output bytes.Buffer) {
-	var report struct {
-		Violations []struct {
-			ImportPath   string
-			SurfaceRatio float64
-		}
-	}
-	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
-		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, output.String())
-	}
-
-	for _, v := range report.Violations {
-		if v.ImportPath == "example.com/cache/deepcache" {
-			t.Errorf("deepcache is a deep module and should not be flagged, got SurfaceRatio=%f (25 TestBehaviorN funcs likely miscounted as exported)", v.SurfaceRatio)
-		}
-	}
-}
-
-// TestRun_InstabilitySkipsFileWithBrokenBody is a full-CLI-pipeline integration test
-// for the full-AST-mode fix. Given a module with a file that has a valid
-// package/import header but a syntax error in the function body, the file must
-// be skipped and its imports must not be counted in the dependency graph.
-// Given: pkg/helper/helper.go and pkg/broken/broken.go with broken function syntax
-// When: `boy-scout go instability --format=json` runs
-// Then: Skipped contains broken.go, TotalEdges == 0, exit code == 2
-func TestRun_InstabilitySkipsFileWithBrokenBody(t *testing.T) {
-	tmpDir := t.TempDir()
-	writeGoFile(t, tmpDir, "go.mod", "module bodybug\n\ngo 1.24\n")
-
-	helperDir := filepath.Join(tmpDir, "pkg", "helper")
-	brokenDir := filepath.Join(tmpDir, "pkg", "broken")
-	for _, d := range []string{helperDir, brokenDir} {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			t.Fatalf("MkdirAll(%s) failed: %v", d, err)
-		}
-	}
-
-	writeGoFile(t, helperDir, "helper.go", `package helper
-
-func Do() {}
-`)
-	writeGoFile(t, brokenDir, "broken.go", `package broken
-
-import "bodybug/pkg/helper"
-
-func Bad( {
-	helper.Do()
-}
-`)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "instability", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
-
-	var report struct {
-		Skipped   []struct{ File string }
-		TotalEdges int
-	}
-	if err := json.Unmarshal(stdoutBuf.Bytes(), &report); err != nil {
-		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf.String())
-	}
-
-	if len(report.Skipped) != 1 {
-		t.Errorf("expected 1 skipped file, got %d: %v", len(report.Skipped), report.Skipped)
-	} else if !strings.HasSuffix(report.Skipped[0].File, "broken.go") {
-		t.Errorf("expected skipped file to end in broken.go, got %s", report.Skipped[0].File)
-	}
-
-	if report.TotalEdges != 0 {
-		t.Errorf("expected TotalEdges=0 (broken.go skipped, no edges), got %d", report.TotalEdges)
-	}
-
-	if exitCode != 2 {
-		t.Errorf("expected exit code 2 (skipped file priority), got %d", exitCode)
-	}
-}
-
 // TestRun_VersionPrintsBuiltVersion verifies that the version subcommand
 // prints the built version string (set via -ldflags -X main.version=...).
 func TestRun_VersionPrintsBuiltVersion(t *testing.T) {
@@ -1346,112 +729,6 @@ func TestRun_VersionPrintsBuiltVersion(t *testing.T) {
 
 // TestRun_CppInstabilityReportsViolations verifies that the cpp instability check
 // works via the CLI and reports violations correctly.
-func TestRun_CppInstabilityReportsViolations(t *testing.T) {
-	// Get the project root (from cmd/boy-scout test dir, go up 2 levels)
-	cwd, _ := os.Getwd()
-	projectRoot := filepath.Join(cwd, "../..")
-	if abs, err := filepath.Abs(projectRoot); err == nil {
-		projectRoot = abs
-	}
-	fixtureDir := filepath.Join(projectRoot, "testdata", "cpp-instability")
-
-	// First run: no violations (original fixture)
-	var stdout, stderr bytes.Buffer
-	exitCode := run([]string{"cpp", "instability", "--format=json", fixtureDir}, &stdout, &stderr)
-
-	// Parse JSON output
-	var report struct {
-		Violations []struct {
-			Source string
-			Target string
-			Gap    float64
-		}
-		TotalEdges int
-	}
-
-	stdoutStr := stdout.String()
-	stderrStr := stderr.String()
-	if stdoutStr == "" {
-		t.Fatalf("No output produced. Exit code: %d, stderr: %s", exitCode, stderrStr)
-	}
-
-	if err := json.Unmarshal([]byte(stdoutStr), &report); err != nil {
-		t.Fatalf("Failed to parse JSON output: %v\nstdout: %s\nstderr: %s", err, stdoutStr, stderrStr)
-	}
-
-	if len(report.Violations) != 0 {
-		t.Errorf("Expected 0 violations in original fixture, got %d", len(report.Violations))
-	}
-	if exitCode != 0 {
-		t.Errorf("Expected exit code 0 (no violations), got %d", exitCode)
-	}
-
-	// Verify TotalEdges is > 0 (confirms the check ran)
-	if report.TotalEdges == 0 {
-		t.Error("Expected TotalEdges > 0")
-	}
-}
-
-// TestRun_CppAbstractnessReportsViolations verifies that the cpp abstractness check
-// works via the CLI and reports violations correctly.
-func TestRun_CppAbstractnessReportsViolations(t *testing.T) {
-	// Get the project root (from cmd/boy-scout test dir, go up 2 levels)
-	cwd, _ := os.Getwd()
-	projectRoot := filepath.Join(cwd, "../..")
-	if abs, err := filepath.Abs(projectRoot); err == nil {
-		projectRoot = abs
-	}
-	fixtureDir := filepath.Join(projectRoot, "testdata", "cpp-abstractness")
-
-	var stdout, stderr bytes.Buffer
-	exitCode := run([]string{"cpp", "abstractness", "--format=json", fixtureDir}, &stdout, &stderr)
-
-	// Parse JSON output
-	var report struct {
-		Violations []struct {
-			ImportPath   string
-			Abstractness float64
-			Zone         string
-		}
-		TotalPackages int
-	}
-
-	stdoutStr := stdout.String()
-	stderrStr := stderr.String()
-	if stdoutStr == "" {
-		t.Fatalf("No output produced. Exit code: %d, stderr: %s", exitCode, stderrStr)
-	}
-
-	if err := json.Unmarshal([]byte(stdoutStr), &report); err != nil {
-		t.Fatalf("Failed to parse JSON output: %v\nstdout: %s\nstderr: %s", err, stdoutStr, stderrStr)
-	}
-
-	// Expect violations (rigid.h should be Zone of Pain)
-	if len(report.Violations) == 0 {
-		t.Errorf("Expected violations in fixture, got 0")
-	}
-
-	// Check that we have at least one Pain zone violation
-	var hasPain bool
-	var hasAbstractness bool
-	for _, v := range report.Violations {
-		if v.Zone == "Pain" {
-			hasPain = true
-			// Verify Abstractness field is set (should be 0.0 for rigid.h)
-			if v.Abstractness >= 0 {
-				hasAbstractness = true
-			}
-		}
-	}
-
-	if !hasPain {
-		t.Errorf("Expected at least one Pain zone violation, got: %+v", report.Violations)
-	}
-	if !hasAbstractness {
-		t.Errorf("Expected Abstractness field to be set in violations")
-	}
-}
-
 // Characterization test for runTsFilelen
 func TestRun_TsFilelenCharacterization(t *testing.T) {
 	tmpDir := t.TempDir()

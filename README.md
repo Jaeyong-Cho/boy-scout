@@ -17,10 +17,7 @@ Available checks:
 - **complexity**: Flag Go functions exceeding a configurable cyclomatic complexity limit (default: 10)
 - **filelen**: Flag files exceeding a configurable line limit
 - **linelen**: Flag physical lines over a configurable character limit (default: 100), exempting quoted-string overflow
-- **crap**: Flag functions with high complexity and low test coverage
 - **duplication**: Flag duplicate code
-- **abstractness**: Architecture check for C++ (Zone of Pain/Uselessness detection)
-- **instability**: Architecture check for C++ (coupling-based instability)
 
 Run `boy-scout -help` for all available options and flags.
 
