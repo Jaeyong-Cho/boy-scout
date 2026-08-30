@@ -33,11 +33,15 @@ Run boy-scout with your language(s):
 boy-scout go all
 
 # C++
-boy-scout cpp funclen
+boy-scout cpp all
 
-# Mixed project (runs both, merges results)
+# TypeScript
+boy-scout ts all
+
+# Mixed project (runs all, merges results)
 boy-scout go all
-boy-scout cpp funclen
+boy-scout cpp all
+boy-scout ts all
 ```
 
 For mixed-language projects, merge all violations from each language into a single list, then process them in the order below.

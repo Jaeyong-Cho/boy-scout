@@ -4,6 +4,7 @@ import (
 	"flag"
 	"io"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/filelen"
 	"boy-scout/internal/linelen"
 	"boy-scout/internal/tsfunclen"
@@ -91,20 +92,97 @@ func runTsLinelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsLinelenCfg, args, stdout, stderr)
 }
 
-// runTsAll runs all TypeScript checks sequentially.
+// runTsAll runs all TypeScript checks and combines their reports.
 func runTsAll(args []string, stdout, stderr io.Writer) int {
-	checks := []struct {
-		name string
-		fn   func([]string, io.Writer, io.Writer) int
-	}{
-		{"funclen", runTsFunclen},
-		{"filelen", runTsFilelen},
+	fs := flag.NewFlagSet("all", flag.ContinueOnError)
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
+	debug := fs.Bool("debug", false, "include excluded files and functions in output")
+
+	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		reportError(err, stderr)
+		return 2
+	}
+
+	funclenReport, filelenReport, linelenReport, err := checkAllTs(paths, excludeFiles, excludeFuncs, *debug)
+	if err != nil {
+		reportError(err, stderr)
+		return 2
+	}
+
+	combined := tsCombinedReport{
+		Funclen: funclenReport,
+		Filelen: filelenReport,
+		Linelen: linelenReport,
+	}
+
+	// Render output
+	if *format == "json" {
+		return renderTsAllJSON(combined, stdout, stderr)
+	}
+	return renderTsAllText(combined, stdout, stderr)
+}
+
+// checkAllTs runs all TypeScript checks with shared options.
+func checkAllTs(paths []string, excludeFiles, excludeFuncs []string, debug bool) (tsfunclen.Report, filelen.Report, linelen.Report, error) {
+	assertutil.Assertf(len(paths) > 0, "checkAllTs: paths must not be empty")
+
+	var (
+		funclenReport tsfunclen.Report
+		filelenReport filelen.Report
+		linelenReport linelen.Report
+	)
+
+	checks := []func() error{
+		func() error {
+			var err error
+			funclenReport, err = checkAllTsFunclen(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			filelenReport, err = checkAllTsFilelen(paths, excludeFiles, debug)
+			return err
+		},
+		func() error {
+			var err error
+			linelenReport, err = checkAllTsLinelen(paths, excludeFiles, debug)
+			return err
+		},
 	}
 
 	for _, check := range checks {
-		if result := check.fn(args, stdout, stderr); result != 0 {
-			return result
+		if err := check(); err != nil {
+			return funclenReport, filelenReport, linelenReport, err
 		}
 	}
-	return 0
+
+	return funclenReport, filelenReport, linelenReport, nil
+}
+
+func checkAllTsFunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (tsfunclen.Report, error) {
+	opts := tsfunclen.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        debug,
+	}
+	return tsfunclen.Check(paths, 50, opts)
+}
+
+func checkAllTsFilelen(paths []string, excludeFiles []string, debug bool) (filelen.Report, error) {
+	opts := filelen.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
+	return filelen.Check(paths, 300, []string{".ts", ".tsx", ".html", ".css"}, opts)
+}
+
+func checkAllTsLinelen(paths []string, excludeFiles []string, debug bool) (linelen.Report, error) {
+	opts := linelen.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
+	return linelen.Check(paths, 100, []string{".ts", ".tsx", ".html", ".css"}, opts)
 }

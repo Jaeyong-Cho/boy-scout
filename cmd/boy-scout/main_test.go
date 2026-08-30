@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"boy-scout/internal/cppfunclen"
+	"boy-scout/internal/filelen"
 	"boy-scout/internal/tsfunclen"
 )
 
@@ -1752,6 +1754,318 @@ func Complex() {
 	// Non-zero exit code for violations
 	if exitCode == 0 {
 		t.Errorf("expected non-zero exit code for violations in 'go all', got 0")
+	}
+}
+
+func TestRun_CppAllReportsCombinedViolations(t *testing.T) {
+	// Create a C++ file with a 310-line function (violates funclen's 50-line default)
+	// in a 312-line file (violates filelen's 300-line default).
+	tmpDir := t.TempDir()
+
+	// Write C++ file: void bigFunction() { ... 310 lines ... }
+	var b strings.Builder
+	b.WriteString("void bigFunction() {\n")
+	for i := 0; i < 310; i++ {
+		fmt.Fprintf(&b, "  int v%d = %d;\n", i, i)
+	}
+	b.WriteString("}\n")
+	cppContent := b.String()
+
+	cppFile := filepath.Join(tmpDir, "big.cpp")
+	if err := os.WriteFile(cppFile, []byte(cppContent), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Test JSON format
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"cpp", "all", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	stderr := stderrBuf.String()
+
+	// Parse JSON response
+	var report map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s\nstderr: %s", err, output, stderr)
+	}
+
+	// Assert both funclen and filelen keys exist
+	if _, ok := report["funclen"]; !ok {
+		t.Errorf("expected 'funclen' key in JSON response, got keys: %v", report)
+	}
+	if _, ok := report["filelen"]; !ok {
+		t.Errorf("expected 'filelen' key in JSON response, got keys: %v", report)
+	}
+
+	// Verify funclen has violations for big.cpp
+	if funlen, ok := report["funclen"]; ok {
+		var funclenReport cppfunclen.Report
+		if err := json.Unmarshal(funlen, &funclenReport); err != nil {
+			t.Fatalf("failed to unmarshal funclen report: %v", err)
+		}
+		if len(funclenReport.Violations) == 0 {
+			t.Errorf("expected funclen violations for big.cpp")
+		}
+		// Verify the file is in violations
+		found := false
+		for _, v := range funclenReport.Violations {
+			if strings.Contains(v.File, "big.cpp") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected big.cpp in funclen violations, got: %v", funclenReport.Violations)
+		}
+	}
+
+	// Verify filelen has violations for big.cpp
+	if flen, ok := report["filelen"]; ok {
+		var filelenReport filelen.Report
+		if err := json.Unmarshal(flen, &filelenReport); err != nil {
+			t.Fatalf("failed to unmarshal filelen report: %v", err)
+		}
+		if len(filelenReport.Violations) == 0 {
+			t.Errorf("expected filelen violations for big.cpp")
+		}
+		// Verify the file is in violations
+		found := false
+		for _, v := range filelenReport.Violations {
+			if strings.Contains(v.File, "big.cpp") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected big.cpp in filelen violations, got: %v", filelenReport.Violations)
+		}
+	}
+
+	// Expect exit code 1 (violations found)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+
+	// Test text format
+	var stdoutBuf2, stderrBuf2 bytes.Buffer
+	exitCode2 := run([]string{"cpp", "all", "--format=text", tmpDir}, &stdoutBuf2, &stderrBuf2)
+
+	output2 := stdoutBuf2.String()
+	if !strings.Contains(output2, "[funclen]") {
+		t.Errorf("expected '[funclen]' prefix in text output, got:\n%s", output2)
+	}
+	if !strings.Contains(output2, "[filelen]") {
+		t.Errorf("expected '[filelen]' prefix in text output, got:\n%s", output2)
+	}
+	if !strings.Contains(output2, "big.cpp") {
+		t.Errorf("expected 'big.cpp' in text output, got:\n%s", output2)
+	}
+
+	if exitCode2 != 1 {
+		t.Errorf("expected exit code 1 for text format, got %d", exitCode2)
+	}
+}
+
+func TestRun_TsAllReportsCombinedViolations(t *testing.T) {
+	// Create a TypeScript file with a 310-line function (violates funclen's 50-line default)
+	// in a 312-line file (violates filelen's 300-line default).
+	tmpDir := t.TempDir()
+
+	// Write TS file: function bigFunction() { ... 310 lines ... }
+	var b strings.Builder
+	b.WriteString("function bigFunction() {\n")
+	for i := 0; i < 310; i++ {
+		fmt.Fprintf(&b, "  const v%d = %d;\n", i, i)
+	}
+	b.WriteString("}\n")
+	tsContent := b.String()
+
+	tsFile := filepath.Join(tmpDir, "big.ts")
+	if err := os.WriteFile(tsFile, []byte(tsContent), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Test JSON format
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"ts", "all", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	output := stdoutBuf.String()
+	stderr := stderrBuf.String()
+
+	// Parse JSON response
+	var report map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s\nstderr: %s", err, output, stderr)
+	}
+
+	// Assert both funclen and filelen keys exist
+	if _, ok := report["funclen"]; !ok {
+		t.Errorf("expected 'funclen' key in JSON response, got keys: %v", report)
+	}
+	if _, ok := report["filelen"]; !ok {
+		t.Errorf("expected 'filelen' key in JSON response, got keys: %v", report)
+	}
+
+	// Verify funclen has violations for big.ts
+	if funlen, ok := report["funclen"]; ok {
+		var funclenReport tsfunclen.Report
+		if err := json.Unmarshal(funlen, &funclenReport); err != nil {
+			t.Fatalf("failed to unmarshal funclen report: %v", err)
+		}
+		if len(funclenReport.Violations) == 0 {
+			t.Errorf("expected funclen violations for big.ts")
+		}
+		// Verify the file is in violations
+		found := false
+		for _, v := range funclenReport.Violations {
+			if strings.Contains(v.File, "big.ts") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected big.ts in funclen violations, got: %v", funclenReport.Violations)
+		}
+	}
+
+	// Verify filelen has violations for big.ts
+	if flen, ok := report["filelen"]; ok {
+		var filelenReport filelen.Report
+		if err := json.Unmarshal(flen, &filelenReport); err != nil {
+			t.Fatalf("failed to unmarshal filelen report: %v", err)
+		}
+		if len(filelenReport.Violations) == 0 {
+			t.Errorf("expected filelen violations for big.ts")
+		}
+		// Verify the file is in violations
+		found := false
+		for _, v := range filelenReport.Violations {
+			if strings.Contains(v.File, "big.ts") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected big.ts in filelen violations, got: %v", filelenReport.Violations)
+		}
+	}
+
+	// Expect exit code 1 (violations found)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+
+	// Test text format
+	var stdoutBuf2, stderrBuf2 bytes.Buffer
+	exitCode2 := run([]string{"ts", "all", "--format=text", tmpDir}, &stdoutBuf2, &stderrBuf2)
+
+	output2 := stdoutBuf2.String()
+	if !strings.Contains(output2, "[funclen]") {
+		t.Errorf("expected '[funclen]' prefix in text output, got:\n%s", output2)
+	}
+	if !strings.Contains(output2, "[filelen]") {
+		t.Errorf("expected '[filelen]' prefix in text output, got:\n%s", output2)
+	}
+	if !strings.Contains(output2, "big.ts") {
+		t.Errorf("expected 'big.ts' in text output, got:\n%s", output2)
+	}
+
+	if exitCode2 != 1 {
+		t.Errorf("expected exit code 1 for text format, got %d", exitCode2)
+	}
+}
+
+func TestRun_CppAllOnEmptyDirIsClean(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"cpp", "all", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	// Empty dir should result in exit code 0
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 for empty directory, got %d", exitCode)
+	}
+
+	// Test JSON format too
+	var stdoutBuf2, stderrBuf2 bytes.Buffer
+	exitCode2 := run([]string{"cpp", "all", "--format=json", tmpDir}, &stdoutBuf2, &stderrBuf2)
+
+	if exitCode2 != 0 {
+		t.Errorf("expected exit code 0 for empty directory (JSON), got %d", exitCode2)
+	}
+
+	// Verify JSON is valid and has empty violations
+	var report map[string]json.RawMessage
+	if err := json.Unmarshal(stdoutBuf2.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf2.String())
+	}
+
+	// Verify violation counts are 0 or absent
+	if funclen, ok := report["funclen"]; ok {
+		var funclenReport cppfunclen.Report
+		if err := json.Unmarshal(funclen, &funclenReport); err != nil {
+			t.Fatalf("failed to unmarshal funclen report: %v", err)
+		}
+		if len(funclenReport.Violations) != 0 {
+			t.Errorf("expected empty funclen violations, got %d", len(funclenReport.Violations))
+		}
+	}
+}
+
+func TestRun_TsAllOnEmptyDirIsClean(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"ts", "all", tmpDir}, &stdoutBuf, &stderrBuf)
+
+	// Empty dir should result in exit code 0
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 for empty directory, got %d", exitCode)
+	}
+
+	// Test JSON format too
+	var stdoutBuf2, stderrBuf2 bytes.Buffer
+	exitCode2 := run([]string{"ts", "all", "--format=json", tmpDir}, &stdoutBuf2, &stderrBuf2)
+
+	if exitCode2 != 0 {
+		t.Errorf("expected exit code 0 for empty directory (JSON), got %d", exitCode2)
+	}
+
+	// Verify JSON is valid and has empty violations
+	var report map[string]json.RawMessage
+	if err := json.Unmarshal(stdoutBuf2.Bytes(), &report); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v\noutput: %s", err, stdoutBuf2.String())
+	}
+
+	// Verify violation counts are 0 or absent
+	if funclen, ok := report["funclen"]; ok {
+		var funclenReport tsfunclen.Report
+		if err := json.Unmarshal(funclen, &funclenReport); err != nil {
+			t.Fatalf("failed to unmarshal funclen report: %v", err)
+		}
+		if len(funclenReport.Violations) != 0 {
+			t.Errorf("expected empty funclen violations, got %d", len(funclenReport.Violations))
+		}
+	}
+}
+
+func TestRun_CppAllInvalidPathErrors(t *testing.T) {
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"cpp", "all", "/does/not/exist"}, &stdoutBuf, &stderrBuf)
+
+	// Invalid path should result in exit code 2 (error from srcfiles.Collect)
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2 for invalid path, got %d", exitCode)
+	}
+}
+
+func TestRun_TsAllInvalidPathErrors(t *testing.T) {
+	var stdoutBuf, stderrBuf bytes.Buffer
+	exitCode := run([]string{"ts", "all", "/does/not/exist"}, &stdoutBuf, &stderrBuf)
+
+	// Invalid path should result in exit code 2 (error from srcfiles.Collect)
+	if exitCode != 2 {
+		t.Errorf("expected exit code 2 for invalid path, got %d", exitCode)
 	}
 }
 

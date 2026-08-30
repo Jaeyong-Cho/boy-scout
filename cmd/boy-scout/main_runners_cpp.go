@@ -4,6 +4,7 @@ import (
 	"flag"
 	"io"
 
+	"boy-scout/internal/assertutil"
 	"boy-scout/internal/cppcomplexity"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/filelen"
@@ -119,20 +120,97 @@ func runCppComplexity(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppComplexityCfg, args, stdout, stderr)
 }
 
-// runCppAll runs all C++ checks sequentially.
+// runCppAll runs all C++ checks and combines their reports.
 func runCppAll(args []string, stdout, stderr io.Writer) int {
-	checks := []struct {
-		name string
-		fn   func([]string, io.Writer, io.Writer) int
-	}{
-		{"funclen", runCppFunclen},
-		{"filelen", runCppFilelen},
+	fs := flag.NewFlagSet("all", flag.ContinueOnError)
+	format := fs.String("format", "text", "output format: text or json")
+	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
+	excludeFunc := fs.String("exclude-func", "", "comma-separated glob patterns for functions to exclude")
+	debug := fs.Bool("debug", false, "include excluded files and functions in output")
+
+	paths, excludeFiles, excludeFuncs, err := resolveArgs(fs, args, excludeFile, excludeFunc)
+	if err != nil {
+		reportError(err, stderr)
+		return 2
+	}
+
+	funclenReport, filelenReport, linelenReport, err := checkAllCpp(paths, excludeFiles, excludeFuncs, *debug)
+	if err != nil {
+		reportError(err, stderr)
+		return 2
+	}
+
+	combined := cppCombinedReport{
+		Funclen: funclenReport,
+		Filelen: filelenReport,
+		Linelen: linelenReport,
+	}
+
+	// Render output
+	if *format == "json" {
+		return renderCppAllJSON(combined, stdout, stderr)
+	}
+	return renderCppAllText(combined, stdout, stderr)
+}
+
+// checkAllCpp runs all C++ checks with shared options.
+func checkAllCpp(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppfunclen.Report, filelen.Report, linelen.Report, error) {
+	assertutil.Assertf(len(paths) > 0, "checkAllCpp: paths must not be empty")
+
+	var (
+		funclenReport cppfunclen.Report
+		filelenReport filelen.Report
+		linelenReport linelen.Report
+	)
+
+	checks := []func() error{
+		func() error {
+			var err error
+			funclenReport, err = checkAllCppFunclen(paths, excludeFiles, excludeFuncs, debug)
+			return err
+		},
+		func() error {
+			var err error
+			filelenReport, err = checkAllCppFilelen(paths, excludeFiles, debug)
+			return err
+		},
+		func() error {
+			var err error
+			linelenReport, err = checkAllCppLinelen(paths, excludeFiles, debug)
+			return err
+		},
 	}
 
 	for _, check := range checks {
-		if result := check.fn(args, stdout, stderr); result != 0 {
-			return result
+		if err := check(); err != nil {
+			return funclenReport, filelenReport, linelenReport, err
 		}
 	}
-	return 0
+
+	return funclenReport, filelenReport, linelenReport, nil
+}
+
+func checkAllCppFunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppfunclen.Report, error) {
+	opts := cppfunclen.Options{
+		ExcludeFiles: excludeFiles,
+		ExcludeFuncs: excludeFuncs,
+		Debug:        debug,
+	}
+	return cppfunclen.Check(paths, 50, opts)
+}
+
+func checkAllCppFilelen(paths []string, excludeFiles []string, debug bool) (filelen.Report, error) {
+	opts := filelen.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
+	return filelen.Check(paths, 300, []string{".cpp", ".h", ".hpp"}, opts)
+}
+
+func checkAllCppLinelen(paths []string, excludeFiles []string, debug bool) (linelen.Report, error) {
+	opts := linelen.Options{
+		ExcludeFiles: excludeFiles,
+		Debug:        debug,
+	}
+	return linelen.Check(paths, 100, []string{".cpp", ".h", ".hpp"}, opts)
 }
