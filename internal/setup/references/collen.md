@@ -1,4 +1,4 @@
-# Linelen Violations
+# Collen Violations
 
 ## Why this is a problem
 
@@ -10,4 +10,4 @@ Extract the sub-expression into a named local variable (one intermediate step pe
 
 ## Examples
 
-For a concrete before/after code example in your language, see the corresponding language guide — each language's approach to breaking long lines differs (Python uses backslash continuation, JavaScript uses implicit semicolon insertion, Go and C++ prefer breaking before operators).
+The same rule applies to Go, C++, TypeScript, HTML, and CSS files selected by the language command. The checker counts Unicode characters, not terminal display columns; a tab counts as one character. The default limit is 100 (`--max-chars`). Overflow is exempt when the line fits after quoted strings are removed. Split expressions at syntactically valid boundaries, then run the checker and your test suite.

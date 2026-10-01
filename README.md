@@ -1,6 +1,6 @@
 # boy-scout
 
-Static analysis tool that catches code quality violations — oversized functions, high complexity, poor test coverage, and architectural issues — before they land in code review.
+Static analysis tool that catches complexity, function-length, file-length, column-length, and duplication violations before code review.
 
 ## Installation
 
@@ -9,17 +9,19 @@ See [INSTALL.md](INSTALL.md) for setup and build instructions.
 ## Usage
 
 ```bash
-boy-scout [flags] [paths...]
+boy-scout <go|cpp|ts> <check|all> [flags] [paths...]
 ```
 
 Available checks:
-- **gofunclen**: Flag Go functions exceeding a configurable line limit (default: 50)
-- **complexity**: Flag Go/C++/TS functions exceeding a configurable cyclomatic complexity limit (default: 6)
-- **filelen**: Flag files exceeding a configurable line limit
-- **linelen**: Flag physical lines over a configurable character limit (default: 100), exempting quoted-string overflow
-- **duplication**: Flag duplicate code
+- **funclen** (`gofunclen` in Go): Flag functions exceeding a configurable line limit (default: 50)
+- **complexity**: Flag functions exceeding a configurable cyclomatic complexity limit (default: 6)
+- **filelen**: Flag files exceeding a configurable line limit (default: 300)
+- **collen**: Flag physical lines over a configurable character limit (default: 100), exempting quoted-string overflow
+- **duplication**: Flag duplicate code in Go and C++
 
-Run `boy-scout -help` for all available options and flags.
+Go and C++ `all` run all five checks. TypeScript `all` runs funclen, filelen, and collen; run `boy-scout ts complexity` separately. TypeScript duplication is not supported.
+
+Run `boy-scout <lang> <check> -help` for check options. Supporting commands include `setup` and `version`.
 
 ## License
 

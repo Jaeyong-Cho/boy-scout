@@ -1,11 +1,11 @@
-package linelen
+package collen
 
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
-	"runtime"
 )
 
 func TestCheck_ReportsLineOverLimit(t *testing.T) {

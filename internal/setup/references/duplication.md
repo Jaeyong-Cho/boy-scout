@@ -4,9 +4,6 @@
 
 Code duplication multiplies the cost of every future fix. When the same logic appears in multiple places, a bug fix, security patch, or behavior change must be applied everywhere it's copied. This creates three risks: forgetting a copy (inconsistent behavior), applying the fix differently in each place (subtle bugs), or spending hours hunting down every location when one needs updating. Copy-pasted code also makes the codebase harder to understand — readers can't tell if two similar functions intentionally diverge or if one copy drifted accidentally.
 
-**Related concepts:**
-- `functions.md` — The clean-code chapter on functions. Covers extraction, naming, and the principle that a piece of logic should live in one place.
-- `meta-pattern.md` — Explains when code should stay together vs. split, and why extraction is always safer than deletion when consolidating duplicates (a shared helper can evolve independently; a deleted copy can't be recovered if the copies turn out to serve different purposes).
 
 ## How to fix it
 

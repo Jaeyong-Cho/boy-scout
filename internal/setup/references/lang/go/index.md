@@ -18,14 +18,11 @@ Go test files use the `_test.go` suffix. For example: `main_test.go`, `handlers_
 
 ## Available Checks
 
-Boy-scout for Go supports the following violation kinds:
-
-1. **funclen** (or `gofunclen`) — Function length violations
+1. **gofunclen** — Function length violations
 2. **complexity** — Function complexity violations
 3. **filelen** — File length violations
-4. **cohesion** — Struct/interface cohesion violations
-5. **linelen** — Line length violations
-6. **duplication** — Duplicate code pattern violations
+4. **collen** — Line length violations
+5. **duplication** — Duplicate code detection
 
 ## Ignore Comments
 

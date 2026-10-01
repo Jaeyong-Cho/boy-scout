@@ -307,10 +307,10 @@ func TestRun_JSONFormatOutputsValidSchema(t *testing.T) {
 
 func TestRun_ExitCodeReflectsOutcome(t *testing.T) {
 	testCases := []struct {
-		name        string
+		name          string
 		hasViolations bool
-		hasSkipped  bool
-		expectedCode int
+		hasSkipped    bool
+		expectedCode  int
 	}{
 		{"clean", false, false, 0},
 		{"violations only", true, false, 1},
@@ -493,7 +493,6 @@ func TestRun_AllOutputHasNoLegacyCheckKeys(t *testing.T) {
 	}
 }
 
-
 const complexFuncSrc = `package main
 func ComplexFunc() {
 	if true {
@@ -527,9 +526,9 @@ func writeAllCheckFixtures(t *testing.T, dir string, gofunclenViolating bool) {
 
 func TestRun_AllExitCodePriorityAcrossBothChecks(t *testing.T) {
 	testCases := []struct {
-		name             string
+		name               string
 		gofunclenViolating bool
-		expectedExitCode int
+		expectedExitCode   int
 	}{
 		{"clean", false, 0},
 		{"gofunclen violated", true, 1},
@@ -1023,7 +1022,7 @@ func DuplicateC() error {
 		Pairs []struct {
 			Type string `json:"type"`
 		} `json:"pairs"`
-		DupLines    int  `json:"dupLines"`
+		DupLines     int  `json:"dupLines"`
 		CrossPackage bool `json:"crossPackage"`
 	}
 
@@ -1453,7 +1452,7 @@ func TestRun_ComplexityDefaultsToCurrentDir(t *testing.T) {
 	}
 }
 
-func TestRun_GoLinelenCharacterization(t *testing.T) {
+func TestRun_GoCollenCharacterization(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a short Go file
@@ -1470,7 +1469,7 @@ func TestRun_GoLinelenCharacterization(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	exitCode := run([]string{"go", "linelen", tmpDir}, &stdout, &stderr)
+	exitCode := run([]string{"go", "collen", tmpDir}, &stdout, &stderr)
 
 	output := stdout.String()
 	stderrOutput := stderr.String()
@@ -1488,7 +1487,7 @@ func TestRun_GoLinelenCharacterization(t *testing.T) {
 	}
 }
 
-func TestRun_CppLinelenCharacterization(t *testing.T) {
+func TestRun_CppCollenCharacterization(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a short C++ file
@@ -1505,7 +1504,7 @@ func TestRun_CppLinelenCharacterization(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	exitCode := run([]string{"cpp", "linelen", tmpDir}, &stdout, &stderr)
+	exitCode := run([]string{"cpp", "collen", tmpDir}, &stdout, &stderr)
 
 	output := stdout.String()
 	stderrOutput := stderr.String()
@@ -1523,7 +1522,7 @@ func TestRun_CppLinelenCharacterization(t *testing.T) {
 	}
 }
 
-func TestRun_TsLinelenCharacterization(t *testing.T) {
+func TestRun_TsCollenCharacterization(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a short TypeScript file
@@ -1540,7 +1539,7 @@ func TestRun_TsLinelenCharacterization(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	exitCode := run([]string{"ts", "linelen", tmpDir}, &stdout, &stderr)
+	exitCode := run([]string{"ts", "collen", tmpDir}, &stdout, &stderr)
 
 	output := stdout.String()
 	stderrOutput := stderr.String()
@@ -1558,7 +1557,7 @@ func TestRun_TsLinelenCharacterization(t *testing.T) {
 	}
 }
 
-func TestRun_AllIncludesLinelen(t *testing.T) {
+func TestRun_AllIncludesCollen(t *testing.T) {
 	// Create a temp dir with a long line
 	tmpDir := t.TempDir()
 
@@ -1587,8 +1586,8 @@ func TestRun_AllIncludesLinelen(t *testing.T) {
 	output := stdoutBuf.String()
 	stderr := stderrBuf.String()
 
-	if !strings.Contains(output, "[linelen]") {
-		t.Errorf("expected '[linelen]' in text output, got:\nstdout: %s\nstderr: %s", output, stderr)
+	if !strings.Contains(output, "[collen]") {
+		t.Errorf("expected '[collen]' in text output, got:\nstdout: %s\nstderr: %s", output, stderr)
 	}
 
 	// Test JSON output
@@ -1599,8 +1598,8 @@ func TestRun_AllIncludesLinelen(t *testing.T) {
 	jsonOutput := stdoutBuf.String()
 	stderr = stderrBuf.String()
 
-	if !strings.Contains(jsonOutput, "\"linelen\"") {
-		t.Errorf("expected '\"linelen\"' key in JSON output, got:\nstdout: %s\nstderr: %s", jsonOutput, stderr)
+	if !strings.Contains(jsonOutput, "\"collen\"") {
+		t.Errorf("expected '\"collen\"' key in JSON output, got:\nstdout: %s\nstderr: %s", jsonOutput, stderr)
 	}
 }
 
@@ -2177,88 +2176,8 @@ func TestRun_TsComplexityRespectsFlagOverride(t *testing.T) {
 	}
 }
 
-func TestRun_GoCohesionReportsViolation(t *testing.T) {
-	// AC7: Low-cohesion struct should be reported
-	tmpDir := t.TempDir()
-	src := `package main
-
-type Foo struct{
-	x, y int
-}
-
-func (f *Foo) SetX(v int) { f.x = v }
-func (f *Foo) SetY(v int) { f.y = v }
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "cohesion", "--format=json", tmpDir}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-	var report interface{}
-	if err := json.Unmarshal([]byte(output), &report); err != nil {
-		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
-	}
-
-	m := report.(map[string]interface{})
-	violations, ok := m["violations"].([]interface{})
-	if !ok || len(violations) != 1 {
-		t.Errorf("expected 1 violation, got %d", len(violations))
-	}
-
-	if len(violations) > 0 {
-		v := violations[0].(map[string]interface{})
-		if class, ok := v["class"].(string); !ok || class != "Foo" {
-			t.Errorf("expected class 'Foo', got '%v'", v["class"])
-		}
-	}
-
-	if exitCode == 0 {
-		t.Errorf("expected non-zero exit code for violations, got 0")
-	}
-}
-
-func TestRun_AllIncludesCohesion(t *testing.T) {
-	// AC11: `go all` includes cohesion check
-	tmpDir := t.TempDir()
-	initModule(t, tmpDir)
-
-	// No violations
-	src := `package main
-
-type Good struct{
-	x int
-}
-
-func (g *Good) Touch() { g.x = 1 }
-`
-	if err := os.WriteFile("test.go", []byte(src), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	exitCode := run([]string{"go", "all", "--format=json", "."}, &stdoutBuf, &stderrBuf)
-
-	output := stdoutBuf.String()
-	var report interface{}
-	if err := json.Unmarshal([]byte(output), &report); err != nil {
-		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, output)
-	}
-
-	m := report.(map[string]interface{})
-	if _, ok := m["cohesion"]; !ok {
-		t.Errorf("expected 'cohesion' key in JSON output, keys: %v", m)
-	}
-
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 for clean code, got %d", exitCode)
-	}
-}
-
 func TestRun_CppTsAllExcludesCohesion(t *testing.T) {
-	// Per plan: C++ all includes complexity, cohesion, and duplication (per AC9)
+	// C++ and TypeScript aggregates exclude the removed cohesion check.
 	tmpDir := t.TempDir()
 
 	// Create a simple C++ file
@@ -2283,12 +2202,12 @@ public:
 	}
 
 	m := report.(map[string]interface{})
-	// C++ all now includes complexity, cohesion, and duplication
+	// C++ all retains complexity and duplication.
 	if _, ok := m["complexity"]; !ok {
 		t.Errorf("expected 'complexity' key in C++ all output")
 	}
-	if _, ok := m["cohesion"]; !ok {
-		t.Errorf("expected 'cohesion' key in C++ all output")
+	if _, ok := m["cohesion"]; ok {
+		t.Errorf("expected no 'cohesion' key in C++ all output")
 	}
 	if _, ok := m["duplication"]; !ok {
 		t.Errorf("expected 'duplication' key in C++ all output")
@@ -2320,4 +2239,3 @@ export class MyClass {
 		t.Errorf("expected no 'cohesion' key in TS all output, but found one")
 	}
 }
-

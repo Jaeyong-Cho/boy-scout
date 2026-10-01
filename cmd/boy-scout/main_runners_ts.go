@@ -2,24 +2,24 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 
 	"boy-scout/internal/assertutil"
+	"boy-scout/internal/collen"
 	"boy-scout/internal/filelen"
-	"boy-scout/internal/linelen"
-	"boy-scout/internal/tscohesion"
 	"boy-scout/internal/tscomplexity"
 	"boy-scout/internal/tsfunclen"
 )
 
 // ============ TypeScript Checkers ============
 
-var tsFunclenCfg = CheckerConfig{
+var tsFunclenCfg = CheckerConfig[tsfunclen.Report]{
 	Name: "funclen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (tsfunclen.Report, error) {
 		maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (tsfunclen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (tsfunclen.Report, error) {
 				opts := tsfunclen.Options{
 					ExcludeFiles: excludeFiles,
 					ExcludeFuncs: excludeFuncs,
@@ -29,20 +29,16 @@ var tsFunclenCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderTsFunclenJSON(report.(tsfunclen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderTsFunclenText(report.(tsfunclen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderTsFunclenJSON,
+	TextRenderer: renderTsFunclenText,
 }
 
-var tsFilelenCfg = CheckerConfig{
+var tsFilelenCfg = CheckerConfig[filelen.Report]{
 	Name: "filelen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
 		maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
 				opts := filelen.Options{
 					ExcludeFiles: excludeFiles,
 					Debug:        debug,
@@ -51,74 +47,44 @@ var tsFilelenCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderFilelenJSON(report.(filelen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderFilelenText(report.(filelen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderFilelenJSON,
+	TextRenderer: renderFilelenText,
 }
 
-var tsLinelenCfg = CheckerConfig{
-	Name: "linelen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+var tsCollenCfg = CheckerConfig[collen.Report]{
+	Name: "collen",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
 		maxChars := fs.Int("max-chars", 100, "maximum line length in characters")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := linelen.Options{
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
+				if *maxChars <= 0 {
+					return collen.Report{}, fmt.Errorf("--max-chars must be positive, got %d", *maxChars)
+				}
+				opts := collen.Options{
 					ExcludeFiles: excludeFiles,
 					Debug:        debug,
 				}
-				return linelen.Check(paths, *maxChars, []string{".ts", ".tsx", ".html", ".css"}, opts)
+				return collen.Check(paths, *maxChars, []string{".ts", ".tsx", ".html", ".css"}, opts)
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderLinelenJSON(report.(linelen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderLinelenText(report.(linelen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderCollenJSON,
+	TextRenderer: renderCollenText,
 }
 
-var tsComplexityCfg = CheckerConfig{
+var tsComplexityCfg = CheckerConfig[tscomplexity.Report]{
 	Name: "complexity",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (tscomplexity.Report, error) {
 		maxComplexity := fs.Int("max-complexity", 6, "maximum cyclomatic complexity per function")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (tscomplexity.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (tscomplexity.Report, error) {
 				opts := tscomplexity.Options{ExcludeFiles: excludeFiles, ExcludeFuncs: excludeFuncs, Debug: debug}
 				return tscomplexity.Check(paths, *maxComplexity, opts)
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderTsComplexityJSON(report.(tscomplexity.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderTsComplexityText(report.(tscomplexity.Report), stdout, stderr)
-	},
-}
-
-var tsCohesionCfg = CheckerConfig{
-	Name: "cohesion",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := tscohesion.Options{
-					ExcludeFiles: excludeFiles,
-					Debug:        debug,
-				}
-				return tscohesion.Check(paths, opts)
-			}
-		}
-	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderTsCohesionJSON(report.(tscohesion.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderTsCohesionText(report.(tscohesion.Report), stdout, stderr)
-	},
+	JSONRenderer: renderTsComplexityJSON,
+	TextRenderer: renderTsComplexityText,
 }
 
 // Thin wrappers that dispatch to configs.
@@ -130,16 +96,12 @@ func runTsFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsFilelenCfg, args, stdout, stderr)
 }
 
-func runTsLinelen(args []string, stdout, stderr io.Writer) int {
-	return runCheck(tsLinelenCfg, args, stdout, stderr)
+func runTsCollen(args []string, stdout, stderr io.Writer) int {
+	return runCheck(tsCollenCfg, args, stdout, stderr)
 }
 
 func runTsComplexity(args []string, stdout, stderr io.Writer) int {
 	return runCheck(tsComplexityCfg, args, stdout, stderr)
-}
-
-func runTsCohesion(args []string, stdout, stderr io.Writer) int {
-	return runCheck(tsCohesionCfg, args, stdout, stderr)
 }
 
 // runTsAll runs all TypeScript checks and combines their reports.
@@ -156,16 +118,10 @@ func runTsAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	funclenReport, filelenReport, linelenReport, err := checkAllTs(paths, excludeFiles, excludeFuncs, *debug)
+	combined, err := checkAllTs(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		reportError(err, stderr)
 		return 2
-	}
-
-	combined := tsCombinedReport{
-		Funclen: funclenReport,
-		Filelen: filelenReport,
-		Linelen: linelenReport,
 	}
 
 	// Render output
@@ -176,40 +132,36 @@ func runTsAll(args []string, stdout, stderr io.Writer) int {
 }
 
 // checkAllTs runs all TypeScript checks with shared options.
-func checkAllTs(paths []string, excludeFiles, excludeFuncs []string, debug bool) (tsfunclen.Report, filelen.Report, linelen.Report, error) {
+func checkAllTs(paths []string, excludeFiles, excludeFuncs []string, debug bool) (tsCombinedReport, error) {
 	assertutil.Assertf(len(paths) > 0, "checkAllTs: paths must not be empty")
 
-	var (
-		funclenReport tsfunclen.Report
-		filelenReport filelen.Report
-		linelenReport linelen.Report
-	)
+	var report tsCombinedReport
 
 	checks := []func() error{
 		func() error {
 			var err error
-			funclenReport, err = checkAllTsFunclen(paths, excludeFiles, excludeFuncs, debug)
+			report.Funclen, err = checkAllTsFunclen(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 		func() error {
 			var err error
-			filelenReport, err = checkAllTsFilelen(paths, excludeFiles, debug)
+			report.Filelen, err = checkAllTsFilelen(paths, excludeFiles, debug)
 			return err
 		},
 		func() error {
 			var err error
-			linelenReport, err = checkAllTsLinelen(paths, excludeFiles, debug)
+			report.Collen, err = checkAllTsCollen(paths, excludeFiles, debug)
 			return err
 		},
 	}
 
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return funclenReport, filelenReport, linelenReport, err
+			return report, err
 		}
 	}
 
-	return funclenReport, filelenReport, linelenReport, nil
+	return report, nil
 }
 
 func checkAllTsFunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (tsfunclen.Report, error) {
@@ -229,10 +181,10 @@ func checkAllTsFilelen(paths []string, excludeFiles []string, debug bool) (filel
 	return filelen.Check(paths, 300, []string{".ts", ".tsx", ".html", ".css"}, opts)
 }
 
-func checkAllTsLinelen(paths []string, excludeFiles []string, debug bool) (linelen.Report, error) {
-	opts := linelen.Options{
+func checkAllTsCollen(paths []string, excludeFiles []string, debug bool) (collen.Report, error) {
+	opts := collen.Options{
 		ExcludeFiles: excludeFiles,
 		Debug:        debug,
 	}
-	return linelen.Check(paths, 100, []string{".ts", ".tsx", ".html", ".css"}, opts)
+	return collen.Check(paths, 100, []string{".ts", ".tsx", ".html", ".css"}, opts)
 }

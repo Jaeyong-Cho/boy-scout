@@ -10,22 +10,17 @@ Run your test suite once before making any changes to ensure tests are green. Th
 boy-scout ts all
 ```
 
-This command checks all violation kinds in your TypeScript code.
+This command checks funclen, filelen, and collen. Run `boy-scout ts complexity` separately for complexity violations.
 
 ## Available Checks
 
-Boy-scout for TypeScript supports the following violation kinds:
-
-1. **funclen** — Function/method length violations
-2. **complexity** — Function/method complexity violations
+1. **funclen** — Function length violations
+2. **complexity** — Function complexity violations
 3. **filelen** — File length violations
-4. **cohesion** — Class cohesion violations
-5. **linelen** — Line length violations
+4. **collen** — Line length violations
 
 ## Limitations
 
 TypeScript support in boy-scout has the following limitations:
 
 - **Duplication** — Not yet supported for TypeScript
-
-Future versions of boy-scout may expand TypeScript support to include duplicate code detection.

@@ -26,8 +26,10 @@ func validateEmbeddedContent(content []byte) {
 	assertNoMachineLocalPath("SKILL.md", content)
 	assertutil.Assertf(!strings.Contains(string(content), "gardener"), "embedded SKILL.md still references old tool name 'gardener'")
 	assertutil.Assertf(!strings.Contains(string(content), "go test ./..."), "embedded SKILL.md must not hardcode a language-specific test command; belongs in references/lang/{lang}/index.md")
-	assertutil.Assertf(strings.Contains(string(content), "cohesion"), "embedded SKILL.md must route to a cohesion reference (regression guard for new violation kinds)")
-	assertutil.Assertf(strings.Contains(string(content), "linelen"), "embedded SKILL.md must route to a linelen reference (regression guard for new violation kinds)")
+	for _, kind := range []string{"complexity", "funclen", "filelen", "collen", "duplication"} {
+		reference := "references/" + kind + ".md"
+		assertutil.Assertf(strings.Contains(string(content), reference), "embedded SKILL.md must route to %s", reference)
+	}
 }
 
 // Run creates a skill file at baseDir/{prefix}/skills/boy-scout/SKILL.md and copies

@@ -5,27 +5,26 @@ import (
 	"fmt"
 	"io"
 
+	"boy-scout/internal/collen"
 	"boy-scout/internal/duplication"
 	"boy-scout/internal/filelen"
-	"boy-scout/internal/gocohesion"
 	"boy-scout/internal/gocomplexity"
 	"boy-scout/internal/gofunclen"
-	"boy-scout/internal/linelen"
 )
 
 // CheckerConfig wraps the setup and execution of a checker command.
 // Setup registers flags and returns a factory that accepts the debug flag
 // (populated after flag parsing) and returns the actual checker function.
-type CheckerConfig struct {
+type CheckerConfig[R any] struct {
 	Name         string
-	Setup        func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error)
-	JSONRenderer func(interface{}, io.Writer, io.Writer) int
-	TextRenderer func(interface{}, io.Writer, io.Writer) int
+	Setup        func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (R, error)
+	JSONRenderer func(R, io.Writer, io.Writer) int
+	TextRenderer func(R, io.Writer, io.Writer) int
 }
 
 // runCheck is the generic runner that all individual checkers delegate to.
 // It handles flag parsing, error reporting, and output rendering.
-func runCheck(cfg CheckerConfig, args []string, stdout, stderr io.Writer) int {
+func runCheck[R any](cfg CheckerConfig[R], args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(cfg.Name, flag.ContinueOnError)
 	format := fs.String("format", "text", "output format: text or json")
 	excludeFile := fs.String("exclude-file", "", "comma-separated glob patterns for files to exclude")
@@ -59,12 +58,12 @@ func runCheck(cfg CheckerConfig, args []string, stdout, stderr io.Writer) int {
 
 // ============ Go Checkers ============
 
-var goFunclenCfg = CheckerConfig{
+var goFunclenCfg = CheckerConfig[gofunclen.Report]{
 	Name: "gofunclen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (gofunclen.Report, error) {
 		maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (gofunclen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (gofunclen.Report, error) {
 				opts := gofunclen.Options{
 					ExcludeFiles: excludeFiles,
 					ExcludeFuncs: excludeFuncs,
@@ -74,20 +73,16 @@ var goFunclenCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderJSON(report.(gofunclen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderText(report.(gofunclen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderJSON,
+	TextRenderer: renderText,
 }
 
-var goComplexityCfg = CheckerConfig{
+var goComplexityCfg = CheckerConfig[gocomplexity.Report]{
 	Name: "complexity",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (gocomplexity.Report, error) {
 		maxComplexity := fs.Int("max-complexity", 6, "maximum cyclomatic complexity per function")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (gocomplexity.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (gocomplexity.Report, error) {
 				opts := gocomplexity.Options{
 					ExcludeFiles: excludeFiles,
 					ExcludeFuncs: excludeFuncs,
@@ -97,41 +92,16 @@ var goComplexityCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderComplexityJSON(report.(gocomplexity.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderComplexityText(report.(gocomplexity.Report), stdout, stderr)
-	},
+	JSONRenderer: renderComplexityJSON,
+	TextRenderer: renderComplexityText,
 }
 
-var goCohesionCfg = CheckerConfig{
-	Name: "cohesion",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := gocohesion.Options{
-					ExcludeFiles: excludeFiles,
-					Debug:        debug,
-				}
-				return gocohesion.Check(paths, opts)
-			}
-		}
-	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCohesionJSON(report.(gocohesion.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCohesionText(report.(gocohesion.Report), stdout, stderr)
-	},
-}
-
-var goFilelenCfg = CheckerConfig{
+var goFilelenCfg = CheckerConfig[filelen.Report]{
 	Name: "filelen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
 		maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
 				opts := filelen.Options{
 					ExcludeFiles: excludeFiles,
 					Debug:        debug,
@@ -140,45 +110,40 @@ var goFilelenCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderFilelenJSON(report.(filelen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderFilelenText(report.(filelen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderFilelenJSON,
+	TextRenderer: renderFilelenText,
 }
 
-var goLinelenCfg = CheckerConfig{
-	Name: "linelen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+var goCollenCfg = CheckerConfig[collen.Report]{
+	Name: "collen",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
 		maxChars := fs.Int("max-chars", 100, "maximum line length in characters")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := linelen.Options{
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
+				if *maxChars <= 0 {
+					return collen.Report{}, fmt.Errorf("--max-chars must be positive, got %d", *maxChars)
+				}
+				opts := collen.Options{
 					ExcludeFiles: excludeFiles,
 					Debug:        debug,
 				}
-				return linelen.Check(paths, *maxChars, []string{".go"}, opts)
+				return collen.Check(paths, *maxChars, []string{".go"}, opts)
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderLinelenJSON(report.(linelen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderLinelenText(report.(linelen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderCollenJSON,
+	TextRenderer: renderCollenText,
 }
 
-var goDuplicationCfg = CheckerConfig{
+var goDuplicationCfg = CheckerConfig[duplication.Report]{
 	Name: "duplication",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (duplication.Report, error) {
 		minLines := fs.Int("min-lines", 5, "minimum function length in lines to compare")
 		minSimilarity := fs.Float64("min-similarity", 0.70, "minimum LCS-based similarity ratio for Type-3 detection (0.0-1.0)")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (duplication.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (duplication.Report, error) {
 				if *minSimilarity < 0.0 || *minSimilarity > 1.0 {
-					return nil, fmt.Errorf("--min-similarity must be in range [0.0, 1.0], got %v", *minSimilarity)
+					return duplication.Report{}, fmt.Errorf("--min-similarity must be in range [0.0, 1.0], got %v", *minSimilarity)
 				}
 				opts := duplication.Options{
 					ExcludeFiles: excludeFiles,
@@ -189,12 +154,8 @@ var goDuplicationCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderDuplicationJSON(report.(duplication.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderDuplicationText(report.(duplication.Report), stdout, stderr)
-	},
+	JSONRenderer: renderDuplicationJSON,
+	TextRenderer: renderDuplicationText,
 }
 
 // Thin wrappers that dispatch to configs (preserves the dispatch map interface).
@@ -206,16 +167,12 @@ func runGoComplexity(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goComplexityCfg, args, stdout, stderr)
 }
 
-func runGoCohesion(args []string, stdout, stderr io.Writer) int {
-	return runCheck(goCohesionCfg, args, stdout, stderr)
-}
-
 func runGoFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(goFilelenCfg, args, stdout, stderr)
 }
 
-func runGoLinelen(args []string, stdout, stderr io.Writer) int {
-	return runCheck(goLinelenCfg, args, stdout, stderr)
+func runGoCollen(args []string, stdout, stderr io.Writer) int {
+	return runCheck(goCollenCfg, args, stdout, stderr)
 }
 
 func runGoDuplication(args []string, stdout, stderr io.Writer) int {
@@ -236,19 +193,10 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	gofunclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
+	combined, err := checkAll(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		reportError(err, stderr)
 		return 2
-	}
-
-	combined := combinedReport{
-		Gofunclen:   gofunclenReport,
-		Complexity:  complexityReport,
-		Cohesion:    cohesionReport,
-		Filelen:     filelenReport,
-		Linelen:     linelenReport,
-		Duplication: duplicationReport,
 	}
 
 	// Render output
@@ -258,65 +206,45 @@ func runGoAll(args []string, stdout, stderr io.Writer) int {
 	return renderAllText(combined, stdout, stderr)
 }
 
-func checkAllCohesion(paths []string, excludeFiles []string, debug bool) (gocohesion.Report, error) {
-	opts := gocohesion.Options{
-		ExcludeFiles: excludeFiles,
-		Debug:        debug,
-	}
-	return gocohesion.Check(paths, opts)
-}
-
 // checkAll runs all checks with shared options.
-func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, gocomplexity.Report, gocohesion.Report, filelen.Report, linelen.Report, duplication.Report, error) {
-	var (
-		gofunclenReport   gofunclen.Report
-		complexityReport  gocomplexity.Report
-		cohesionReport    gocohesion.Report
-		filelenReport     filelen.Report
-		linelenReport     linelen.Report
-		duplicationReport duplication.Report
-	)
+func checkAll(paths []string, excludeFiles, excludeFuncs []string, debug bool) (combinedReport, error) {
+	var report combinedReport
 
 	checks := []func() error{
 		func() error {
 			var err error
-			gofunclenReport, err = checkAllGofunclen(paths, excludeFiles, excludeFuncs, debug)
+			report.Gofunclen, err = checkAllGofunclen(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 		func() error {
 			var err error
-			complexityReport, err = checkAllComplexity(paths, excludeFiles, excludeFuncs, debug)
+			report.Complexity, err = checkAllComplexity(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 		func() error {
 			var err error
-			cohesionReport, err = checkAllCohesion(paths, excludeFiles, debug)
+			report.Filelen, err = checkAllFilelen(paths, excludeFiles, debug)
 			return err
 		},
 		func() error {
 			var err error
-			filelenReport, err = checkAllFilelen(paths, excludeFiles, debug)
+			report.Collen, err = checkAllCollen(paths, excludeFiles, debug)
 			return err
 		},
 		func() error {
 			var err error
-			linelenReport, err = checkAllLinelen(paths, excludeFiles, debug)
-			return err
-		},
-		func() error {
-			var err error
-			duplicationReport, err = checkAllDuplication(paths, excludeFiles, excludeFuncs, debug)
+			report.Duplication, err = checkAllDuplication(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 	}
 
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return gofunclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err
+			return report, err
 		}
 	}
 
-	return gofunclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, nil
+	return report, nil
 }
 
 func checkAllGofunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (gofunclen.Report, error) {
@@ -345,12 +273,12 @@ func checkAllFilelen(paths []string, excludeFiles []string, debug bool) (filelen
 	return filelen.Check(paths, 300, []string{".go"}, opts)
 }
 
-func checkAllLinelen(paths []string, excludeFiles []string, debug bool) (linelen.Report, error) {
-	opts := linelen.Options{
+func checkAllCollen(paths []string, excludeFiles []string, debug bool) (collen.Report, error) {
+	opts := collen.Options{
 		ExcludeFiles: excludeFiles,
 		Debug:        debug,
 	}
-	return linelen.Check(paths, 100, []string{".go"}, opts)
+	return collen.Check(paths, 100, []string{".go"}, opts)
 }
 
 func checkAllDuplication(paths []string, excludeFiles, excludeFuncs []string, debug bool) (duplication.Report, error) {
@@ -361,4 +289,3 @@ func checkAllDuplication(paths []string, excludeFiles, excludeFuncs []string, de
 	}
 	return duplication.Check(paths, 5, opts)
 }
-

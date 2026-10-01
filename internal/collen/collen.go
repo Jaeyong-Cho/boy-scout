@@ -1,14 +1,14 @@
 /*
 ---
 type: Source Code
-title: linelen
+title: collen
 description: Language-agnostic line-length checker, flagging physical lines over a configurable character limit (default 100), with quote-stripping exemption.
 tags: [boy-scout, clean-code-checks]
 timestamp: 2026-08-26T00:00:00+09:00
 ---
 */
 
-package linelen
+package collen
 
 import (
 	"strings"

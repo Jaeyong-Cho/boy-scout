@@ -238,7 +238,7 @@ func TestRun_TemplateDeclaresFilelenGuidance(t *testing.T) {
 		name   string
 		marker string
 	}{
-		{"FilelenFixedBeforeCohesion", "filelen, cohesion, cross-package duplication"},
+		{"FilelenFixedBeforeCrossPackageDuplication", "filelen, cross-package duplication"},
 	}
 
 	for _, c := range cases {
@@ -287,7 +287,7 @@ func TestRun_ReferenceFilesExplainWhyAndHow(t *testing.T) {
 	}{
 		{"Funclen", "funclen.md", "one level of abstraction", "table of contents"},
 		{"Complexity", "complexity.md", "too many independent paths", "each branch"},
-		{"Filelen", "filelen.md", "mixing multiple concerns", "high cohesion"},
+		{"Filelen", "filelen.md", "mixing multiple concerns", "one responsibility"},
 	}
 
 	for _, c := range cases {
@@ -363,7 +363,7 @@ func TestRun_TemplateMapsViolationsToReferenceFiles(t *testing.T) {
 	}
 
 	// Check fix-order statement
-	if !strings.Contains(contentStr, "funclen, linelen, same-package duplication, complexity, filelen, cohesion, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, collen, same-package duplication, complexity, filelen, cross-package duplication") {
 		t.Errorf("expected skill template to contain fix-order statement with all violation kinds, got:\n%s", contentStr)
 	}
 }
@@ -534,7 +534,7 @@ func TestRun_TemplateOrdersDuplicationBySamePackageVsCrossPackage(t *testing.T) 
 	contentStr := string(content)
 
 	// Check that same-package duplication clusters are mentioned in early tier with funclen
-	if !strings.Contains(contentStr, "funclen, linelen, same-package duplication, complexity, filelen, cohesion, cross-package duplication") {
+	if !strings.Contains(contentStr, "funclen, collen, same-package duplication, complexity, filelen, cross-package duplication") {
 		t.Errorf("expected skill template to mention violation fix order with same-package before cross-package duplication, got:\n%s", contentStr)
 	}
 }
@@ -608,14 +608,6 @@ func TestRun_DuplicationReferenceExplainsWhyAndHow(t *testing.T) {
 	// Check for "How to fix it" section
 	if !strings.Contains(contentStr, "How to fix it") {
 		t.Errorf("expected duplication.md to contain 'How to fix it' section, got:\n%s", contentStr)
-	}
-
-	// Check for cross-links to meta-pattern.md and functions.md
-	if !strings.Contains(contentStr, "meta-pattern.md") {
-		t.Errorf("expected duplication.md to cross-link meta-pattern.md, got:\n%s", contentStr)
-	}
-	if !strings.Contains(contentStr, "functions.md") {
-		t.Errorf("expected duplication.md to cross-link functions.md, got:\n%s", contentStr)
 	}
 
 	// Check for Examples section referencing Go file
@@ -774,7 +766,7 @@ func TestRun_TemplateProposesFixPlanBeforeApplying(t *testing.T) {
 	}
 }
 
-func TestRun_WritesLinelenReference(t *testing.T) {
+func TestRun_WritesCollenReference(t *testing.T) {
 	baseDir := t.TempDir()
 
 	_, err := Run(baseDir, "", ".agents")
@@ -782,68 +774,22 @@ func TestRun_WritesLinelenReference(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
-	// Top-level linelen.md should exist
-	path := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "linelen.md")
+	// Top-level collen.md should exist
+	path := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "collen.md")
 	if _, err := os.Stat(path); err != nil {
-		t.Errorf("expected linelen.md to exist at %q, got error: %v", path, err)
+		t.Errorf("expected collen.md to exist at %q, got error: %v", path, err)
 	}
 
-	// Language-specific linelen files should NOT exist (per AC1)
+	// Language-specific collen files should NOT exist (per AC1)
 	for _, lang := range []string{"go", "cpp", "ts"} {
-		langPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", lang, "linelen.md")
+		langPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", lang, "collen.md")
 		if _, err := os.Stat(langPath); !os.IsNotExist(err) {
-			t.Errorf("expected %s/linelen.md to NOT exist, but it does or had other error: %v", lang, err)
+			t.Errorf("expected %s/collen.md to NOT exist, but it does or had other error: %v", lang, err)
 		}
 	}
 }
 
-func TestRun_WritesCohesionReferences(t *testing.T) {
-	baseDir := t.TempDir()
-
-	_, err := Run(baseDir, "", ".agents")
-	if err != nil {
-		t.Fatalf("Run failed: %v", err)
-	}
-
-	// Top-level cohesion.md should exist
-	path := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "cohesion.md")
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("expected cohesion.md to exist at %q, got error: %v", path, err)
-	}
-
-	// Language-specific cohesion files should exist
-	for _, lang := range []string{"go", "cpp", "ts"} {
-		langPath := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", lang, "cohesion.md")
-		if _, err := os.Stat(langPath); err != nil {
-			t.Errorf("expected %s/cohesion.md to exist at %q, got error: %v", lang, langPath, err)
-		}
-	}
-}
-
-func TestRun_CohesionReferenceExplainsMethodThreshold(t *testing.T) {
-	baseDir := t.TempDir()
-
-	_, err := Run(baseDir, "", ".agents")
-	if err != nil {
-		t.Fatalf("Run failed: %v", err)
-	}
-
-	path := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "cohesion.md")
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read cohesion.md: %v", err)
-	}
-
-	contentStr := string(content)
-	// Check for case-insensitive mention of "2 methods" or similar phrasing
-	if !strings.Contains(strings.ToLower(contentStr), "2 methods") &&
-		!strings.Contains(strings.ToLower(contentStr), "fewer than 2") &&
-		!strings.Contains(strings.ToLower(contentStr), "fewer than two") {
-		t.Errorf("expected cohesion.md to explain the 2-method threshold, got:\n%s", contentStr)
-	}
-}
-
-func TestRun_TemplateTableRoutesCohesionAndLinelenToReferences(t *testing.T) {
+func TestRun_TemplateTableRoutesRetainedChecksToReferences(t *testing.T) {
 	baseDir := t.TempDir()
 
 	_, err := Run(baseDir, "", ".agents")
@@ -858,13 +804,9 @@ func TestRun_TemplateTableRoutesCohesionAndLinelenToReferences(t *testing.T) {
 	}
 	skillStr := string(content)
 
-	// Check for cohesion and linelen references in SKILL.md
+	// Check reference routes for the retained violation categories.
 	expectedRefs := []string{
-		"references/cohesion.md",
-		"references/linelen.md",
-		"references/lang/go/cohesion.md",
-		"references/lang/cpp/cohesion.md",
-		"references/lang/ts/cohesion.md",
+		"references/collen.md",
 	}
 
 	for _, ref := range expectedRefs {
@@ -874,7 +816,7 @@ func TestRun_TemplateTableRoutesCohesionAndLinelenToReferences(t *testing.T) {
 	}
 }
 
-func TestRun_TemplateOrdersCohesionAndLinelenByDisruption(t *testing.T) {
+func TestRun_TemplateOrdersRetainedChecksByDisruption(t *testing.T) {
 	baseDir := t.TempDir()
 
 	_, err := Run(baseDir, "", ".agents")
@@ -890,7 +832,7 @@ func TestRun_TemplateOrdersCohesionAndLinelenByDisruption(t *testing.T) {
 	skillStr := string(content)
 
 	// Check for the exact ordering string from AC5
-	expectedOrder := "funclen, linelen, same-package duplication, complexity, filelen, cohesion, cross-package duplication"
+	expectedOrder := "funclen, collen, same-package duplication, complexity, filelen, cross-package duplication"
 	if !strings.Contains(skillStr, expectedOrder) {
 		t.Errorf("expected SKILL.md to contain disruption order %q, got:\n%s", expectedOrder, skillStr)
 	}
@@ -928,7 +870,7 @@ func TestRun_TemplateNoLongerMarksCppComplexityUnsupported(t *testing.T) {
 	}
 }
 
-func TestRun_CppIndexListsComplexityAndCohesion(t *testing.T) {
+func TestRun_CppIndexListsComplexityAndCollen(t *testing.T) {
 	baseDir := t.TempDir()
 
 	_, err := Run(baseDir, "", ".agents")
@@ -946,12 +888,12 @@ func TestRun_CppIndexListsComplexityAndCohesion(t *testing.T) {
 	if !strings.Contains(contentStr, "complexity") {
 		t.Errorf("expected cpp index.md to list complexity, got:\n%s", contentStr)
 	}
-	if !strings.Contains(contentStr, "cohesion") {
-		t.Errorf("expected cpp index.md to list cohesion, got:\n%s", contentStr)
+	if !strings.Contains(contentStr, "collen") {
+		t.Errorf("expected cpp index.md to list collen, got:\n%s", contentStr)
 	}
 }
 
-func TestRun_GoIndexListsCohesionAndLinelen(t *testing.T) {
+func TestRun_GoIndexListsCollen(t *testing.T) {
 	baseDir := t.TempDir()
 
 	_, err := Run(baseDir, "", ".agents")
@@ -966,11 +908,8 @@ func TestRun_GoIndexListsCohesionAndLinelen(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "cohesion") {
-		t.Errorf("expected go index.md to list cohesion, got:\n%s", contentStr)
-	}
-	if !strings.Contains(contentStr, "linelen") {
-		t.Errorf("expected go index.md to list linelen, got:\n%s", contentStr)
+	if !strings.Contains(contentStr, "collen") {
+		t.Errorf("expected go index.md to list collen, got:\n%s", contentStr)
 	}
 	// Should not contain hardcoded "all five" claim
 	if strings.Contains(contentStr, "all five") {
@@ -1027,7 +966,7 @@ func TestRun_TsIndexListsAvailableChecks(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	expectedChecks := []string{"funclen", "complexity", "cohesion", "filelen", "linelen"}
+	expectedChecks := []string{"funclen", "complexity", "filelen", "collen"}
 	for _, check := range expectedChecks {
 		if !strings.Contains(contentStr, check) {
 			t.Errorf("expected ts/index.md to list %s, got:\n%s", check, contentStr)
@@ -1046,7 +985,7 @@ func TestRun_WritesTsExampleReferences(t *testing.T) {
 	tsDir := filepath.Join(baseDir, ".agents", "skills", "boy-scout", "references", "lang", "ts")
 
 	// These files should exist
-	shouldExist := []string{"funclen.md", "complexity.md", "cohesion.md", "filelen.md"}
+	shouldExist := []string{"funclen.md", "complexity.md", "filelen.md"}
 	for _, filename := range shouldExist {
 		path := filepath.Join(tsDir, filename)
 		if _, err := os.Stat(path); err != nil {
@@ -1055,7 +994,7 @@ func TestRun_WritesTsExampleReferences(t *testing.T) {
 	}
 
 	// These files should NOT exist
-	shouldNotExist := []string{"duplication.md", "linelen.md"}
+	shouldNotExist := []string{"duplication.md", "collen.md"}
 	for _, filename := range shouldNotExist {
 		path := filepath.Join(tsDir, filename)
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -1064,15 +1003,15 @@ func TestRun_WritesTsExampleReferences(t *testing.T) {
 	}
 }
 
-func TestRun_ValidatesCohesionAndLinelenPresence(t *testing.T) {
+func TestRun_ValidatesRetainedReferencePresence(t *testing.T) {
 	baseDir := t.TempDir()
 
 	// This test exercises validateEmbeddedContent, which should assert that
-	// the embedded SKILL.md contains both "cohesion" and "linelen"
+	// the embedded SKILL.md routes to every retained violation reference.
 	_, err := Run(baseDir, "", ".agents")
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
 	// If we got here, validateEmbeddedContent passed (which would have asserted
-	// the presence of cohesion and linelen)
+	// the presence of the retained reference routes)
 }

@@ -6,22 +6,21 @@ import (
 	"io"
 
 	"boy-scout/internal/assertutil"
-	"boy-scout/internal/cppcohesion"
+	"boy-scout/internal/collen"
 	"boy-scout/internal/cppcomplexity"
 	"boy-scout/internal/cppduplication"
 	"boy-scout/internal/cppfunclen"
 	"boy-scout/internal/filelen"
-	"boy-scout/internal/linelen"
 )
 
 // ============ C++ Checkers ============
 
-var cppFilelenCfg = CheckerConfig{
+var cppFilelenCfg = CheckerConfig[filelen.Report]{
 	Name: "filelen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
 		maxLines := fs.Int("max-lines", 300, "maximum file length in lines")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (filelen.Report, error) {
 				opts := filelen.Options{
 					ExcludeFiles: excludeFiles,
 					Debug:        debug,
@@ -30,42 +29,37 @@ var cppFilelenCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderFilelenJSON(report.(filelen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderFilelenText(report.(filelen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderFilelenJSON,
+	TextRenderer: renderFilelenText,
 }
 
-var cppLinelenCfg = CheckerConfig{
-	Name: "linelen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+var cppCollenCfg = CheckerConfig[collen.Report]{
+	Name: "collen",
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
 		maxChars := fs.Int("max-chars", 100, "maximum line length in characters")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := linelen.Options{
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (collen.Report, error) {
+				if *maxChars <= 0 {
+					return collen.Report{}, fmt.Errorf("--max-chars must be positive, got %d", *maxChars)
+				}
+				opts := collen.Options{
 					ExcludeFiles: excludeFiles,
 					Debug:        debug,
 				}
-				return linelen.Check(paths, *maxChars, []string{".cpp", ".h", ".hpp"}, opts)
+				return collen.Check(paths, *maxChars, []string{".cpp", ".h", ".hpp"}, opts)
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderLinelenJSON(report.(linelen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderLinelenText(report.(linelen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderCollenJSON,
+	TextRenderer: renderCollenText,
 }
 
-var cppFunclenCfg = CheckerConfig{
+var cppFunclenCfg = CheckerConfig[cppfunclen.Report]{
 	Name: "funclen",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (cppfunclen.Report, error) {
 		maxLines := fs.Int("max-lines", 50, "maximum function length in lines")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (cppfunclen.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (cppfunclen.Report, error) {
 				opts := cppfunclen.Options{
 					ExcludeFiles: excludeFiles,
 					ExcludeFuncs: excludeFuncs,
@@ -75,20 +69,16 @@ var cppFunclenCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCppFunclenJSON(report.(cppfunclen.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCppFunclenText(report.(cppfunclen.Report), stdout, stderr)
-	},
+	JSONRenderer: renderCppFunclenJSON,
+	TextRenderer: renderCppFunclenText,
 }
 
-var cppComplexityCfg = CheckerConfig{
+var cppComplexityCfg = CheckerConfig[cppcomplexity.Report]{
 	Name: "complexity",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (cppcomplexity.Report, error) {
 		maxComplexity := fs.Int("max-complexity", 6, "maximum cyclomatic complexity per function")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (cppcomplexity.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (cppcomplexity.Report, error) {
 				opts := cppcomplexity.Options{
 					ExcludeFiles: excludeFiles,
 					ExcludeFuncs: excludeFuncs,
@@ -98,44 +88,19 @@ var cppComplexityCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCppComplexityJSON(report.(cppcomplexity.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCppComplexityText(report.(cppcomplexity.Report), stdout, stderr)
-	},
+	JSONRenderer: renderCppComplexityJSON,
+	TextRenderer: renderCppComplexityText,
 }
 
-var cppCohesionCfg = CheckerConfig{
-	Name: "cohesion",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-				opts := cppcohesion.Options{
-					ExcludeFiles: excludeFiles,
-					Debug:        debug,
-				}
-				return cppcohesion.Check(paths, opts)
-			}
-		}
-	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCppCohesionJSON(report.(cppcohesion.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderCppCohesionText(report.(cppcohesion.Report), stdout, stderr)
-	},
-}
-
-var cppDuplicationCfg = CheckerConfig{
+var cppDuplicationCfg = CheckerConfig[cppduplication.Report]{
 	Name: "duplication",
-	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+	Setup: func(fs *flag.FlagSet) func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (cppduplication.Report, error) {
 		minLines := fs.Int("min-lines", 5, "minimum function length in lines to compare")
 		minSimilarity := fs.Float64("min-similarity", 0.70, "minimum LCS-based similarity ratio for Type-3 detection (0.0-1.0)")
-		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
-			return func(paths, excludeFiles, excludeFuncs []string) (interface{}, error) {
+		return func(debug bool) func(paths, excludeFiles, excludeFuncs []string) (cppduplication.Report, error) {
+			return func(paths, excludeFiles, excludeFuncs []string) (cppduplication.Report, error) {
 				if *minSimilarity < 0.0 || *minSimilarity > 1.0 {
-					return nil, fmt.Errorf("--min-similarity must be in range [0.0, 1.0], got %v", *minSimilarity)
+					return cppduplication.Report{}, fmt.Errorf("--min-similarity must be in range [0.0, 1.0], got %v", *minSimilarity)
 				}
 				opts := cppduplication.Options{
 					ExcludeFiles: excludeFiles,
@@ -146,12 +111,8 @@ var cppDuplicationCfg = CheckerConfig{
 			}
 		}
 	},
-	JSONRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderDuplicationJSON(report.(cppduplication.Report), stdout, stderr)
-	},
-	TextRenderer: func(report interface{}, stdout, stderr io.Writer) int {
-		return renderDuplicationText(report.(cppduplication.Report), stdout, stderr)
-	},
+	JSONRenderer: renderDuplicationJSON,
+	TextRenderer: renderDuplicationText,
 }
 
 // Thin wrappers that dispatch to configs.
@@ -159,8 +120,8 @@ func runCppFilelen(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppFilelenCfg, args, stdout, stderr)
 }
 
-func runCppLinelen(args []string, stdout, stderr io.Writer) int {
-	return runCheck(cppLinelenCfg, args, stdout, stderr)
+func runCppCollen(args []string, stdout, stderr io.Writer) int {
+	return runCheck(cppCollenCfg, args, stdout, stderr)
 }
 
 func runCppFunclen(args []string, stdout, stderr io.Writer) int {
@@ -169,10 +130,6 @@ func runCppFunclen(args []string, stdout, stderr io.Writer) int {
 
 func runCppComplexity(args []string, stdout, stderr io.Writer) int {
 	return runCheck(cppComplexityCfg, args, stdout, stderr)
-}
-
-func runCppCohesion(args []string, stdout, stderr io.Writer) int {
-	return runCheck(cppCohesionCfg, args, stdout, stderr)
 }
 
 func runCppDuplication(args []string, stdout, stderr io.Writer) int {
@@ -193,19 +150,10 @@ func runCppAll(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	funclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err := checkAllCpp(paths, excludeFiles, excludeFuncs, *debug)
+	combined, err := checkAllCpp(paths, excludeFiles, excludeFuncs, *debug)
 	if err != nil {
 		reportError(err, stderr)
 		return 2
-	}
-
-	combined := cppCombinedReport{
-		Funclen:     funclenReport,
-		Complexity:  complexityReport,
-		Cohesion:    cohesionReport,
-		Filelen:     filelenReport,
-		Linelen:     linelenReport,
-		Duplication: duplicationReport,
 	}
 
 	// Render output
@@ -216,58 +164,46 @@ func runCppAll(args []string, stdout, stderr io.Writer) int {
 }
 
 // checkAllCpp runs all C++ checks with shared options.
-func checkAllCpp(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppfunclen.Report, cppcomplexity.Report, cppcohesion.Report, filelen.Report, linelen.Report, cppduplication.Report, error) {
+func checkAllCpp(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppCombinedReport, error) {
 	assertutil.Assertf(len(paths) > 0, "checkAllCpp: paths must not be empty")
 
-	var (
-		funclenReport     cppfunclen.Report
-		complexityReport  cppcomplexity.Report
-		cohesionReport    cppcohesion.Report
-		filelenReport     filelen.Report
-		linelenReport     linelen.Report
-		duplicationReport cppduplication.Report
-	)
+	var report cppCombinedReport
 
 	checks := []func() error{
 		func() error {
 			var err error
-			funclenReport, err = checkAllCppFunclen(paths, excludeFiles, excludeFuncs, debug)
+			report.Funclen, err = checkAllCppFunclen(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 		func() error {
 			var err error
-			complexityReport, err = checkAllCppComplexity(paths, excludeFiles, excludeFuncs, debug)
+			report.Complexity, err = checkAllCppComplexity(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 		func() error {
 			var err error
-			cohesionReport, err = checkAllCppCohesion(paths, excludeFiles, debug)
+			report.Filelen, err = checkAllCppFilelen(paths, excludeFiles, debug)
 			return err
 		},
 		func() error {
 			var err error
-			filelenReport, err = checkAllCppFilelen(paths, excludeFiles, debug)
+			report.Collen, err = checkAllCppCollen(paths, excludeFiles, debug)
 			return err
 		},
 		func() error {
 			var err error
-			linelenReport, err = checkAllCppLinelen(paths, excludeFiles, debug)
-			return err
-		},
-		func() error {
-			var err error
-			duplicationReport, err = checkAllCppDuplication(paths, excludeFiles, excludeFuncs, debug)
+			report.Duplication, err = checkAllCppDuplication(paths, excludeFiles, excludeFuncs, debug)
 			return err
 		},
 	}
 
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return funclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, err
+			return report, err
 		}
 	}
 
-	return funclenReport, complexityReport, cohesionReport, filelenReport, linelenReport, duplicationReport, nil
+	return report, nil
 }
 
 func checkAllCppFunclen(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppfunclen.Report, error) {
@@ -287,12 +223,12 @@ func checkAllCppFilelen(paths []string, excludeFiles []string, debug bool) (file
 	return filelen.Check(paths, 300, []string{".cpp", ".h", ".hpp"}, opts)
 }
 
-func checkAllCppLinelen(paths []string, excludeFiles []string, debug bool) (linelen.Report, error) {
-	opts := linelen.Options{
+func checkAllCppCollen(paths []string, excludeFiles []string, debug bool) (collen.Report, error) {
+	opts := collen.Options{
 		ExcludeFiles: excludeFiles,
 		Debug:        debug,
 	}
-	return linelen.Check(paths, 100, []string{".cpp", ".h", ".hpp"}, opts)
+	return collen.Check(paths, 100, []string{".cpp", ".h", ".hpp"}, opts)
 }
 
 func checkAllCppComplexity(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppcomplexity.Report, error) {
@@ -302,14 +238,6 @@ func checkAllCppComplexity(paths []string, excludeFiles, excludeFuncs []string, 
 		Debug:        debug,
 	}
 	return cppcomplexity.Check(paths, 6, opts)
-}
-
-func checkAllCppCohesion(paths []string, excludeFiles []string, debug bool) (cppcohesion.Report, error) {
-	opts := cppcohesion.Options{
-		ExcludeFiles: excludeFiles,
-		Debug:        debug,
-	}
-	return cppcohesion.Check(paths, opts)
 }
 
 func checkAllCppDuplication(paths []string, excludeFiles, excludeFuncs []string, debug bool) (cppduplication.Report, error) {
